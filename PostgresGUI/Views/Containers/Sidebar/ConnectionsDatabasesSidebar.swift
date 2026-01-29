@@ -155,7 +155,7 @@ struct ConnectionsDatabasesSidebar: View {
             isExecutingQuery: appState.query.isExecutingQuery,
             selectedDatabase: appState.connection.selectedDatabase,
             refreshQueryAction: { table in
-                await appState.executeTableQuery(for: table)
+                appState.requestTableQuery(for: table)
             }
         )
     }
