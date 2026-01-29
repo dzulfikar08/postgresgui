@@ -30,7 +30,7 @@ struct TablesListView: View {
             isExecutingQuery: appState.query.isExecutingQuery,
             selectedDatabase: appState.connection.selectedDatabase,
             refreshQueryAction: { table in
-                await appState.executeTableQuery(for: table)
+                appState.requestTableQuery(for: table)
             }
         )
     }
@@ -164,7 +164,9 @@ struct TablesListIsolated: View {
                 )
             }
         }
-        .padding(.top, 8)
+        .padding(.top, 12)
+        .padding(.horizontal, 6)
+        .padding(.trailing, 12)
     }
 }
 
@@ -203,16 +205,10 @@ struct TableListRowView: View {
                 toggleExpanded()
             },
             onShowAllRows: {
-                Task {
-                    appState.connection.selectedTable = table
-                    await appState.executeTableQuery(for: table)
-                }
+                appState.requestTableQuery(for: table)
             },
             onShowLimitedRows: {
-                Task {
-                    appState.connection.selectedTable = table
-                    await appState.executeTableQuery(for: table, limit: 100)
-                }
+                appState.requestTableQuery(for: table, limit: 100)
             },
             refreshQueryAction: {
                 Task {
@@ -220,8 +216,9 @@ struct TableListRowView: View {
                 }
             },
             onGenerateDDL: {
-                Task {
-                    await ensureViewModel().generateDDL()
+                Task { @MainActor in
+                    let vm = ensureViewModel()
+                    await vm.generateDDL()
                 }
             },
             onShowExport: {
@@ -255,7 +252,7 @@ struct TableListRowView: View {
 
     private func fetchColumnInfo() {
         isLoadingColumns = true
-        Task {
+        Task { @MainActor in
             // Fetch column info and primary keys directly without requiring table to be "selected"
             // This bypasses TableMetadataService which has selection guards
             do {
@@ -294,6 +291,7 @@ struct TableListRowView: View {
 
     /// Ensures the viewModel exists, creating it lazily if needed.
     /// Called when menu actions require the ViewModel.
+    @MainActor
     private func ensureViewModel() -> TableContextMenuViewModel {
         if let existing = viewModel {
             return existing
@@ -359,32 +357,40 @@ struct TableColumnRowView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            // Key icon (only for PK/FK columns)
+            // Key icon for PK/FK, dot for others
             if column.isPrimaryKey {
                 Image(systemName: "key.fill")
                     .font(.system(size: 10))
-                    .foregroundColor(.yellow)
+                    .foregroundColor(.secondary)
                     .frame(width: 12)
             } else if column.isForeignKey {
                 Image(systemName: "key")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                     .frame(width: 12)
+            } else {
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 6))
+                    .foregroundColor(.secondary)
+                    .frame(width: 12)
             }
 
-            // Column name
+            // Column name (50%)
             Text(column.name)
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
-
-            // Data type (right-aligned)
+            // Data type (50%, right-aligned)
             Text(simplifiedType)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.leading, (column.isPrimaryKey || column.isForeignKey) ? 32 : 44)
+        .padding(.leading, 32)
         .padding(.trailing, 6)
         .padding(.vertical, 2)
     }
