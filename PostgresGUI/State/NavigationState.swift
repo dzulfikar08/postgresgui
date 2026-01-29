@@ -20,7 +20,6 @@ class NavigationState {
     var isShowingCreateDatabase: Bool = false
     var isShowingKeyboardShortcuts: Bool = false
     var isShowingHelp: Bool = false
-    var isShowingDesignSystem: Bool = false
 
     // Sheet management helpers
     func showConnectionForm() {
