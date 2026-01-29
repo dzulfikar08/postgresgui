@@ -129,7 +129,7 @@ class QueryState {
     ) {
         timer?.cancel()
         setValue()
-        timer = Task {
+        timer = Task { @MainActor in
             try? await Task.sleep(nanoseconds: duration.nanoseconds)
             guard !Task.isCancelled else { return }
             clearValue()
@@ -217,6 +217,7 @@ class QueryState {
             }
         }
         isExecutingQuery = false
+
     }
 
     /// Update query results and column names
@@ -224,6 +225,8 @@ class QueryState {
         queryResults = results
         queryColumnNames = columnNames?.isEmpty == false ? columnNames : nil
         showQueryResults = true
+        let resultIds = Set(results.map(\.id))
+        let invalidSelectionCount = selectedRowIDs.subtracting(resultIds).count
     }
 
     /// Clear query results and reset state for a new query

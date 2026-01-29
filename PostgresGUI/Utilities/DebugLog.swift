@@ -23,6 +23,7 @@ enum DebugLog {
             return handler
         }
     }
+
 #endif
     
     /// Print a message only in Debug builds

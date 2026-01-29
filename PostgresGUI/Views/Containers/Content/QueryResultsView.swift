@@ -49,7 +49,9 @@ struct QueryResultsView: View {
             tableId: appState.connection.selectedTable?.id,
             selectedRowIDs: Binding(
                 get: { appState.query.selectedRowIDs },
-                set: { appState.query.selectedRowIDs = $0 }
+                set: { newValue in
+                    appState.query.selectedRowIDs = newValue
+                }
             ),
             onPreviousPage: {
                 viewModel?.goToPreviousPage()

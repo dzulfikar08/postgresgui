@@ -79,6 +79,7 @@ final class TableMetadataService: TableMetadataServiceProtocol {
             primaryKeys: primaryKeyColumns ?? existingCache?.primaryKeys,
             columns: columnInfo ?? existingCache?.columns
         )
+
         DebugLog.print("✅ [TableMetadataService] Cached metadata for \(table.schema).\(table.name)")
 
         return (primaryKeys: primaryKeyColumns, columnInfo: columnInfo)
