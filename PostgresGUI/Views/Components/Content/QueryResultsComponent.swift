@@ -76,14 +76,15 @@ struct QueryResultsComponent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Results or error display - greyed out during execution
-            resultsContent
-                .opacity(isExecuting ? 0.4 : 1.0)
-                .allowsHitTesting(!isExecuting)
+            if isExecuting {
+                loadingView
+            } else {
+                resultsContent
 
-            // Pagination row (only show if there's more than one page)
-            if showPagination {
-                paginationBar
+                // Pagination row (only show if there's more than one page)
+                if showPagination {
+                    paginationBar
+                }
             }
         }
         .padding(.leading, 4)
@@ -128,6 +129,11 @@ struct QueryResultsComponent: View {
             // Display results using SwiftUI Table
             resultsTable
         }
+    }
+
+    private var loadingView: some View {
+        ProgressView("Loading results...")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
