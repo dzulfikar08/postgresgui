@@ -29,11 +29,15 @@ struct TableListRowComponent: View {
 
     @State private var isHovered = false
     @State private var isButtonHovered = false
+    @State private var isChevronHovered = false
+    @State private var isNameHovered = false
 
     /// Display name based on whether schema prefix should be shown
     private var displayText: String {
         showSchemaPrefix ? table.displayName : table.name
     }
+
+    private let rowControlHeight: CGFloat = 22
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -53,33 +57,75 @@ struct TableListRowComponent: View {
     // MARK: - Table Header
 
     private var tableHeader: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
             // Expand/collapse chevron
-            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .frame(width: 12)
-
-            Image(systemName: table.tableType == .foreign ? "tablecells.fill" : "tablecells")
-                .foregroundColor(.secondary)
-            Text(displayText)
-                .lineLimit(1)
-            Spacer()
-
-            Menu {
-                tableMenuContent
+            Button {
+                onToggleExpanded()
             } label: {
-                Image(systemName: "ellipsis")
-                    .foregroundColor(isButtonHovered ? .primary : .secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 6)
-                    .background(isButtonHovered ? Color.secondary.opacity(0.2) : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .opacity((isHovered || isButtonHovered) ? 1.0 : 0.0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: 12, height: rowControlHeight)
+                    .padding(.horizontal, 4)
+                    .background(isChevronHovered ? Color.secondary.opacity(0.2) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
             .onHover { hovering in
-                isButtonHovered = hovering
+                isChevronHovered = hovering
+            }
+
+            // Table name click shows query results
+            Button {
+                onShowAllRows()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isNameHovered ? "play.circle.fill" : (table.tableType == .foreign ? "tablecells.fill" : "tablecells"))
+                        .foregroundColor(isNameHovered ? .green : .secondary)
+                        .frame(width: 14, alignment: .center)
+                    if showSchemaPrefix && table.schema != "public" {
+                        HStack(spacing: 2) {
+                            Text(table.schema)
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundColor(.primary)
+                            Text(".")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundColor(.primary)
+                            Text(table.name)
+                                .lineLimit(1)
+                        }
+                    } else {
+                        Text(displayText)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: rowControlHeight)
+                .padding(.horizontal, 4)
+                .background(isNameHovered ? Color.secondary.opacity(0.2) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                isNameHovered = hovering
+            }
+            .overlay(alignment: .trailing) {
+                Menu {
+                    tableMenuContent
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(isButtonHovered ? .primary : .secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 6)
+                        .background(isButtonHovered ? Color.secondary.opacity(0.2) : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .opacity((isHovered || isButtonHovered) ? 1.0 : 0.0)
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    isButtonHovered = hovering
+                }
             }
         }
         .padding(.vertical, 1)
@@ -87,9 +133,6 @@ struct TableListRowComponent: View {
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovered = hovering
-        }
-        .onTapGesture {
-            onToggleExpanded()
         }
     }
 
@@ -185,4 +228,57 @@ struct TableListRowComponent: View {
         }
         .disabled(isExecutingQuery)
     }
+}
+
+#Preview {
+    let sampleTable = TableInfo(name: "quotes", schema: "public")
+    let sampleColumns: [ColumnInfo] = [
+        ColumnInfo(name: "id", dataType: "uuid", isPrimaryKey: true),
+        ColumnInfo(name: "source_id", dataType: "uuid"),
+        ColumnInfo(name: "doc_id", dataType: "varchar"),
+        ColumnInfo(name: "created_by", dataType: "varchar"),
+        ColumnInfo(name: "content", dataType: "text"),
+        ColumnInfo(name: "details", dataType: "jsonb"),
+        ColumnInfo(name: "page_number", dataType: "int"),
+        ColumnInfo(name: "created_at", dataType: "timestamp"),
+        ColumnInfo(name: "updated_at", dataType: "timestamp")
+    ]
+
+    return VStack(spacing: 12) {
+        TableListRowComponent(
+            table: sampleTable,
+            isExpanded: false,
+            isExecutingQuery: false,
+            columnInfo: sampleColumns,
+            isLoadingColumns: false,
+            showSchemaPrefix: true,
+            onToggleExpanded: {},
+            onShowAllRows: {},
+            onShowLimitedRows: {},
+            refreshQueryAction: {},
+            onGenerateDDL: {},
+            onShowExport: {},
+            onTruncate: {},
+            onDrop: {}
+        )
+
+        TableListRowComponent(
+            table: sampleTable,
+            isExpanded: true,
+            isExecutingQuery: false,
+            columnInfo: sampleColumns,
+            isLoadingColumns: false,
+            showSchemaPrefix: true,
+            onToggleExpanded: {},
+            onShowAllRows: {},
+            onShowLimitedRows: {},
+            refreshQueryAction: {},
+            onGenerateDDL: {},
+            onShowExport: {},
+            onTruncate: {},
+            onDrop: {}
+        )
+    }
+    .padding()
+    .frame(width: 320)
 }

@@ -21,6 +21,7 @@ struct SchemaGroupView: View {
 
     /// Current number of tables to display (for incremental loading)
     @State private var displayedCount: Int = SchemaGroupView.batchSize
+    @State private var isHovered = false
 
     /// Tables to display (limited for performance)
     private var displayedTables: ArraySlice<TableInfo> {
@@ -80,10 +81,12 @@ struct SchemaGroupView: View {
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .frame(width: 12)
-            Image(systemName: "folder")
-                .foregroundColor(.secondary)
-            Text(group.name)
-                .fontWeight(.medium)
+            HStack(spacing: 4) {
+                Image(systemName: "folder")
+                    .foregroundColor(.secondary)
+                Text(group.name)
+                    .foregroundColor(.primary)
+            }
             Spacer()
             Text("\(group.tableCount)")
                 .font(.caption)
@@ -93,7 +96,14 @@ struct SchemaGroupView: View {
                 .background(Color.secondary.opacity(0.15))
                 .clipShape(Capsule())
         }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 6)
+        .background(isHovered ? Color.secondary.opacity(0.2) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovered = hovering
+        }
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isExpanded.toggle()
