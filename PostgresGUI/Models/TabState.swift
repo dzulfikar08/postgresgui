@@ -68,7 +68,11 @@ final class TabState: Identifiable {
     /// Decode cached results from Data
     var cachedResults: [TableRow]? {
         guard let data = cachedResultsData else { return nil }
-        return try? JSONDecoder().decode([TableRow].self, from: data)
+        do {
+            return try JSONDecoder().decode([TableRow].self, from: data)
+        } catch {
+            return nil
+        }
     }
 
     /// Encode and store results

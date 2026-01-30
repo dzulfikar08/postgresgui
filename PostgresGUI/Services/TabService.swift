@@ -74,8 +74,8 @@ class TabService: TabServiceProtocol {
         tabState.selectedTableName = viewModel.selectedTableName
         tabState.selectedSchemaFilter = viewModel.selectedSchemaFilter
 
-        // Note: cachedResults are intentionally NOT persisted to TabState.
-        // Results should only exist in-memory during a session, not across app restarts.
+        // Persist cached results for restoration after app restart
+        tabState.setCachedResults(viewModel.cachedResults, columnNames: viewModel.cachedColumnNames)
 
         save()
     }
@@ -137,9 +137,13 @@ class TabService: TabServiceProtocol {
 
     /// Update cached results for a tab (in-memory only, not persisted to disk)
     func updateTabResults(_ viewModel: TabViewModel, results: [TableRow]?, columnNames: [String]?) {
-        DebugLog.print("💾 [TabService] Caching \(results?.count ?? 0) results in-memory for tab \(viewModel.id)")
-        // Results are only stored in the TabViewModel (in-memory), not persisted to TabState
-        // This is intentional - results should not survive app restarts
+        DebugLog.print("💾 [TabService] Caching \(results?.count ?? 0) results for tab \(viewModel.id)")
+        if let tabState = fetchTabState(by: viewModel.id) {
+            tabState.setCachedResults(results, columnNames: columnNames)
+            save()
+        } else {
+            DebugLog.print("⚠️ [TabService] Cannot cache - TabState not found for \(viewModel.id)")
+        }
     }
 
     // MARK: - Legacy Protocol Conformance (for gradual migration)
@@ -218,9 +222,10 @@ class TabService: TabServiceProtocol {
     }
 
     func updateTabResults(_ tab: TabState, results: [TableRow]?, columnNames: [String]?) {
-        // Results are only stored in-memory (TabViewModel), not persisted to TabState
-        // This is intentional - results should not survive app restarts
-        DebugLog.print("💾 [TabService] Results caching is in-memory only (not persisted)")
+        // Persist cached results to TabState for restoration after app restart
+        tab.setCachedResults(results, columnNames: columnNames)
+        save()
+        DebugLog.print("💾 [TabService] Results cached to SwiftData")
     }
 
     func clearSavedQueryId(_ tab: TabState) {
