@@ -117,7 +117,25 @@ class DetailContentViewModel {
             return
         }
 
-        guard let selectedTable = appState.connection.selectedTable else {
+        let resolvedTable: TableInfo? = {
+            if let selectedTable = appState.connection.selectedTable {
+                return selectedTable
+            }
+
+            guard let tableName = editability.tableName else { return nil }
+            let candidateTables: [TableInfo]
+            if let schemaName = editability.schemaName {
+                candidateTables = appState.connection.tables.filter {
+                    $0.name == tableName && $0.schema == schemaName
+                }
+            } else {
+                candidateTables = appState.connection.tables.filter { $0.name == tableName }
+            }
+
+            return candidateTables.count == 1 ? candidateTables.first : nil
+        }()
+
+        guard let selectedTable = resolvedTable else {
             deleteError = EditabilityReason(
                 title: "No Table Selected",
                 body: "Select a table from the sidebar to delete rows."
@@ -193,7 +211,6 @@ class DetailContentViewModel {
 
         // Capture results version before async operation
         let versionBeforeDelete = appState.query.resultsVersion
-
         // Optimistic UI update: remove rows immediately
         appState.query.queryResults.removeAll { deletedIDs.contains($0.id) }
         appState.query.selectedRowIDs = []
@@ -205,9 +222,22 @@ class DetailContentViewModel {
             databaseService: appState.connection.databaseService
         )
 
+        let isSuccess: Bool
+        let failureReason: String
+        switch result {
+        case .success:
+            isSuccess = true
+            failureReason = ""
+        case .failure(let error):
+            isSuccess = false
+            failureReason = error.localizedDescription
+        }
+        let canRollback = !isSuccess
+            ? isSafeToRollback(versionAtOperationStart: versionBeforeDelete, currentVersion: appState.query.resultsVersion)
+            : false
         // Rollback on failure (only if results haven't been replaced by a refresh)
         if case .failure(let error) = result {
-            if isSafeToRollback(versionAtOperationStart: versionBeforeDelete, currentVersion: appState.query.resultsVersion) {
+            if canRollback {
                 // Safe to rollback - results haven't changed
                 for (index, row) in rowsWithIndices.sorted(by: { $0.index < $1.index }) {
                     let insertIndex = min(index, appState.query.queryResults.count)
