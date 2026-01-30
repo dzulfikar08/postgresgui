@@ -250,38 +250,44 @@ private final class PreviewDatabaseService: DatabaseServiceProtocol {
     func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { [] }
 }
 
-#Preview("Database Dropdown") {
-    @State var showConnectionDropdown = false
-    @State var showDatabaseDropdown = true
+private struct ConnectionDatabasePickerPreview: View {
+    @State private var showConnectionDropdown = false
+    @State private var showDatabaseDropdown = true
 
-    let appState = AppState(connection: ConnectionState(databaseService: PreviewDatabaseService()))
-    let connections: [ConnectionProfile] = [
+    private let appState = AppState(connection: ConnectionState(databaseService: PreviewDatabaseService()))
+    private let connections: [ConnectionProfile] = [
         ConnectionProfile(name: "Local Postgres", host: "localhost", username: "postgres"),
         ConnectionProfile(name: "Analytics", host: "analytics.internal", username: "reporting")
     ]
 
-    appState.connection.currentConnection = connections.first
-    appState.connection.databases = [
-        DatabaseInfo(name: "postgres", tableCount: 42),
-        DatabaseInfo(name: "analytics", tableCount: 18),
-        DatabaseInfo(name: "staging", tableCount: 12)
-    ]
-    appState.connection.selectedDatabase = appState.connection.databases.first
+    var body: some View {
+        appState.connection.currentConnection = connections.first
+        appState.connection.databases = [
+            DatabaseInfo(name: "postgres", tableCount: 42),
+            DatabaseInfo(name: "analytics", tableCount: 18),
+            DatabaseInfo(name: "staging", tableCount: 12)
+        ]
+        appState.connection.selectedDatabase = appState.connection.databases.first
 
-    return ConnectionDatabasePicker(
-        showConnectionDropdown: $showConnectionDropdown,
-        connections: connections,
-        onSelectConnection: { _ in },
-        onEditConnection: { _ in },
-        onDeleteConnection: { _ in },
-        onCreateConnection: { },
-        showDatabaseDropdown: $showDatabaseDropdown,
-        onSelectDatabase: { _ in },
-        onDeleteDatabase: { _ in },
-        onCreateDatabase: { },
-        onDeleteError: { _ in }
-    )
-    .environment(appState)
-    .frame(width: 420)
-    .padding()
+        return ConnectionDatabasePicker(
+            showConnectionDropdown: $showConnectionDropdown,
+            connections: connections,
+            onSelectConnection: { _ in },
+            onEditConnection: { _ in },
+            onDeleteConnection: { _ in },
+            onCreateConnection: { },
+            showDatabaseDropdown: $showDatabaseDropdown,
+            onSelectDatabase: { _ in },
+            onDeleteDatabase: { _ in },
+            onCreateDatabase: { },
+            onDeleteError: { _ in }
+        )
+        .environment(appState)
+        .frame(width: 420)
+        .padding()
+    }
+}
+
+#Preview("Database Dropdown") {
+    ConnectionDatabasePickerPreview()
 }
