@@ -5,9 +5,9 @@
 [![Version](https://img.shields.io/badge/version-1.0.9-blue.svg)](https://postgresgui.com)
   [![Platform](https://img.shields.io/badge/platform-macOS%2026-lightgrey.svg)](https://www.apple.com/macos)
 
-## Important NOTE
+## NOTE 01/30/2026
 
-The current main branch is a work in progress. Previously, we attempted to detect data types from query results and convert them from binary to strings. This approach turned into a game of whack-a-mole: when the application encountered a data type it didn’t know how to parse, the result was displayed as raw binary. I’ve removed this logic and plan to replace it with a more general solution. — Ghazi, 01/26/2026
+A fix is being pushed to the App Store to address the inconsistent data display issue reported here: https://github.com/PostgresGUI/postgresgui/issues/20. There are also improvements and features such as the table schema dropdown and saved query caching by [NeodymiumPhish](https://github.com/NeodymiumPhish). — Ghazi
 
 ## Getting started
 
