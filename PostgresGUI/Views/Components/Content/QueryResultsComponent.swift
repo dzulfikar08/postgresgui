@@ -74,6 +74,12 @@ struct QueryResultsComponent: View {
         currentPage > 0 || hasNextPage
     }
 
+    private var tableIdentity: String {
+        let tablePart = tableId ?? "no-table"
+        let columnsPart = columnNames?.joined(separator: "|") ?? "no-columns"
+        return "\(tablePart)|\(columnsPart)"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if isExecuting {
@@ -188,7 +194,7 @@ struct QueryResultsComponent: View {
                     .width(min: Constants.ColumnWidth.tableColumnMin)
                 }
             }
-            .id(tableId)
+            .id(tableIdentity)
             .onDeleteCommand {
                 if !selectedRowIDs.isEmpty {
                     onDeleteKeyPressed?()
@@ -216,7 +222,7 @@ struct QueryResultsComponent: View {
                 .width(min: Constants.ColumnWidth.tableColumnMin)
             }
         }
-        .id(tableId)
+        .id(tableIdentity)
     }
 
     private var filteredResults: [TableRow] {
