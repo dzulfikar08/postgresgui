@@ -31,6 +31,7 @@ class QueryState {
     var lastQueryText: String? = nil  // For retry on timeout
     var queryExecutionTime: TimeInterval? = nil
     var selectedRowIDs: Set<UUID> = []
+    var isResultsReadOnlyDueToContextMismatch: Bool = false
 
     // In-memory cache for SavedQuery results (keyed by SavedQuery.id)
     private var savedQueryResultsCache: [UUID: CachedQueryResult] = [:]
@@ -235,6 +236,7 @@ class QueryState {
         queryResults = []
         queryColumnNames = nil
         selectedRowIDs = []
+        isResultsReadOnlyDueToContextMismatch = false
     }
 
     /// Reset query state
@@ -254,6 +256,7 @@ class QueryState {
         lastQueryText = nil
         queryExecutionTime = nil
         selectedRowIDs = []
+        isResultsReadOnlyDueToContextMismatch = false
         currentPage = 0
         hasNextPage = false
         currentSavedQueryId = nil

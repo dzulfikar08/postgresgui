@@ -49,6 +49,21 @@ class DetailContentViewModel {
         return determineQueryEditability(context)
     }
 
+    /// Whether results are read-only due to context mismatch
+    var isEditingDisabledDueToContextMismatch: Bool {
+        appState.query.isResultsReadOnlyDueToContextMismatch
+    }
+
+    static let contextMismatchHelpText =
+        "Editing disabled because results are from a different connection/database."
+
+    private var contextMismatchReason: EditabilityReason {
+        EditabilityReason(
+            title: "Read-Only Results",
+            body: Self.contextMismatchHelpText
+        )
+    }
+
     // MARK: - Initialization
 
     init(
@@ -109,6 +124,11 @@ class DetailContentViewModel {
 
     func deleteSelectedRows() {
         DebugLog.print("🗑️ [DetailContentViewModel] Delete button clicked for \(appState.query.selectedRowIDs.count) row(s)")
+
+        if isEditingDisabledDueToContextMismatch {
+            deleteError = contextMismatchReason
+            return
+        }
 
         // Check if query results are editable (same constraints as edit)
         let editability = queryEditability
@@ -252,6 +272,11 @@ class DetailContentViewModel {
 
     func editSelectedRows() {
         DebugLog.print("✏️ [DetailContentViewModel] Edit button clicked for \(appState.query.selectedRowIDs.count) row(s)")
+
+        if isEditingDisabledDueToContextMismatch {
+            editError = contextMismatchReason
+            return
+        }
 
         // Check if query results are editable
         let editability = queryEditability
@@ -401,6 +426,9 @@ class DetailContentViewModel {
             appState.query.resultsVersion += 1
         }
         appState.query.finishQueryExecution(with: result)
+        if result.isSuccess {
+            appState.query.isResultsReadOnlyDueToContextMismatch = false
+        }
 
         if result.isSuccess {
             DebugLog.print("✅ [DetailContentViewModel] Query executed successfully, showing results")

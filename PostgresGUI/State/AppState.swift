@@ -152,6 +152,7 @@ class AppState {
                 query.hasNextPage = false
                 query.finishQueryExecution(with: result)
             }
+            query.isResultsReadOnlyDueToContextMismatch = false
 
             // Cache results to active tab for restoration on tab switch
             query.cachedResultsTableId = table.id
