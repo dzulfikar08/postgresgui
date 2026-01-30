@@ -70,8 +70,8 @@ struct TableListRowComponent: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: 12, height: rowControlHeight)
-                    .padding(.horizontal, 4)
+                    .frame(width: 28, height: rowControlHeight)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -126,9 +126,12 @@ struct TableListRowComponent: View {
             }
         }
         .padding(.vertical, 2)
-        .padding(.horizontal, 6)
+        .padding(.trailing, 6)
         .contentShape(Rectangle())
         .background(rowBackground, in: RoundedRectangle(cornerRadius: rowCornerRadius))
+        .onTapGesture {
+            onShowAllRows()
+        }
         .onHover { hovering in
             isHovered = hovering
         }
