@@ -70,7 +70,7 @@ struct TableListRowComponent: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: 28, height: rowControlHeight)
+                    .frame(width: 20, height: rowControlHeight)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
