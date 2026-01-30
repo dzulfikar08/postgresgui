@@ -33,6 +33,7 @@ enum DebugLog {
         Swift.print(items.map { "\($0)" }.joined(separator: separator), terminator: terminator)
         #endif
     }
+
 }
 
 /// Extension to configure Logger instances for conditional logging

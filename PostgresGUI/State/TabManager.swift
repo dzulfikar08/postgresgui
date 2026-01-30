@@ -187,6 +187,7 @@ class TabManager {
     func updateActiveTabResults(results: [TableRow]?, columnNames: [String]?) {
         guard let activeTab = activeTab, !activeTab.isPendingDeletion else { return }
 
+
         activeTab.cachedResults = results
         activeTab.cachedColumnNames = columnNames
 

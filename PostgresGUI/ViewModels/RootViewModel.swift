@@ -380,6 +380,7 @@ class RootViewModel {
             return
         }
 
+
         if let cachedResults = tab.cachedResults {
             appState.query.queryResults = cachedResults
             appState.query.queryColumnNames = tab.cachedColumnNames
