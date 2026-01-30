@@ -64,6 +64,9 @@ struct RootView: View {
             .environment(appState)
         }
         .task {
+            // Wire up tabManager to appState for result caching
+            appState.tabManager = tabManager
+
             // Create ViewModel with dependencies
             let vm = RootViewModel(
                 appState: appState,

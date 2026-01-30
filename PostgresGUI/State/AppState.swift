@@ -20,6 +20,10 @@ class AppState {
 
     private let tableMetadataService: TableMetadataServiceProtocol
 
+    // MARK: - Tab Manager (for caching query results)
+
+    weak var tabManager: TabManager?
+
     // MARK: - Debounce State
 
     private var schemaSearchPathTask: Task<Void, Never>?
@@ -148,6 +152,13 @@ class AppState {
                 query.hasNextPage = false
                 query.finishQueryExecution(with: result)
             }
+
+            // Cache results to active tab for restoration on tab switch
+            query.cachedResultsTableId = table.id
+            tabManager?.updateActiveTabResults(
+                results: query.queryResults,
+                columnNames: query.queryColumnNames
+            )
 
             // Fetch table metadata (primary keys, column info) for edit/delete operations
             await fetchTableMetadata(for: table)
