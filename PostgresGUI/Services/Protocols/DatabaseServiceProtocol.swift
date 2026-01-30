@@ -72,6 +72,10 @@ protocol DatabaseServiceProtocol: AnyObject {
     /// Execute arbitrary SQL query and return results along with column names
     func executeQuery(_ sql: String) async throws -> ([TableRow], [String])
 
+    /// Execute SQL intended for query results display
+    /// Wraps select queries for safe display formatting
+    func executeDisplayQuery(_ sql: String) async throws -> ([TableRow], [String])
+
     // MARK: - Row Operations
 
     /// Delete rows from a table using primary key values
