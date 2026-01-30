@@ -226,7 +226,7 @@ class QueryState {
         queryColumnNames = columnNames?.isEmpty == false ? columnNames : nil
         showQueryResults = true
         let resultIds = Set(results.map(\.id))
-        let invalidSelectionCount = selectedRowIDs.subtracting(resultIds).count
+        selectedRowIDs = selectedRowIDs.intersection(resultIds)
     }
 
     /// Clear query results and reset state for a new query
