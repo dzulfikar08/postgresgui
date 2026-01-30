@@ -244,7 +244,7 @@ private final class PreviewDatabaseService: DatabaseServiceProtocol {
         table: String,
         primaryKeyColumns: [String],
         originalRow: TableRow,
-        updatedValues: [String: String?]
+        updatedValues: [String: RowEditValue]
     ) async throws { }
     func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { [] }
     func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { [] }
