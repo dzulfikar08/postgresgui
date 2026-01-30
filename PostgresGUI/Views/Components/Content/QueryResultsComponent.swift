@@ -43,6 +43,9 @@ private extension ComparisonResult {
 // MARK: - Query Results Component
 
 struct QueryResultsComponent: View {
+    @AppStorage(Constants.UserDefaultsKeys.queryResultsDateFormat)
+    private var dateFormatRawValue = QueryResultsDateFormat.iso8601.rawValue
+
     // Data
     let results: [TableRow]
     let columnNames: [String]?
@@ -242,6 +245,78 @@ struct QueryResultsComponent: View {
 
     private func formatValue(_ value: String?) -> String {
         guard let value = value else { return "NULL" }
-        return value
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let date = parseDate(from: trimmedValue) else {
+            return value
+        }
+
+        switch selectedDateFormat {
+        case .relative:
+            return Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+        default:
+            return selectedDateFormat.formatter.string(from: date)
+        }
+    }
+
+    private var selectedDateFormat: QueryResultsDateFormat {
+        QueryResultsDateFormat(rawValue: dateFormatRawValue) ?? .iso8601
+    }
+
+    private func parseDate(from value: String) -> Date? {
+        guard !value.isEmpty else { return nil }
+
+        if let date = Self.iso8601ParserWithFractional.date(from: value) {
+            return date
+        }
+
+        if let date = Self.iso8601Parser.date(from: value) {
+            return date
+        }
+
+        for formatter in Self.customParsers {
+            if let date = formatter.date(from: value) {
+                return date
+            }
+        }
+
+        return nil
+    }
+
+    private static let iso8601Parser: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let iso8601ParserWithFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let customParsers: [DateFormatter] = [
+        makeParsingFormatter("yyyy-MM-dd HH:mm:ss"),
+        makeParsingFormatter("yyyy-MM-dd HH:mm:ss.SSS"),
+        makeParsingFormatter("yyyy-MM-dd HH:mm:ssZ"),
+        makeParsingFormatter("yyyy-MM-dd HH:mm:ss.SSSZ"),
+        makeParsingFormatter("yyyy-MM-dd'T'HH:mm:ss"),
+        makeParsingFormatter("yyyy-MM-dd'T'HH:mm:ss.SSS"),
+        makeParsingFormatter("yyyy-MM-dd'T'HH:mm:ssZ"),
+        makeParsingFormatter("yyyy-MM-dd'T'HH:mm:ss.SSSZ"),
+        makeParsingFormatter("yyyy-MM-dd")
+    ]
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
+
+    private static func makeParsingFormatter(_ format: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = format
+        return formatter
     }
 }
