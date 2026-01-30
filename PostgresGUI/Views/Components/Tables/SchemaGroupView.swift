@@ -44,7 +44,8 @@ struct SchemaGroupView: View {
                         refreshQueryAction: refreshQueryAction,
                         showSchemaPrefix: false
                     )
-                    .listRowSeparator(.visible)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 0))
                 }
 
                 // "Load more" button when there are more tables to show
@@ -76,38 +77,39 @@ struct SchemaGroupView: View {
     }
 
     private var schemaHeader: some View {
-        HStack {
-            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .frame(width: 12)
-            HStack(spacing: 4) {
-                Image(systemName: "folder")
-                    .foregroundColor(.secondary)
-                Text(group.name)
-                    .foregroundColor(.primary)
-            }
-            Spacer()
-            Text("\(group.tableCount)")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.secondary.opacity(0.15))
-                .clipShape(Capsule())
-        }
-        .padding(.vertical, 3)
-        .padding(.horizontal, 6)
-        .background(isHovered ? Color.secondary.opacity(0.2) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .onTapGesture {
+        Button {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isExpanded.toggle()
             }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 12)
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .foregroundStyle(.secondary)
+                    Text(group.name)
+                        .foregroundStyle(.primary)
+                }
+                Spacer()
+                Text("\(group.tableCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 6)
+            .background(isHovered ? Color.secondary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .accessibilityLabel("\(group.name), \(group.tableCount) tables")
     }
 }

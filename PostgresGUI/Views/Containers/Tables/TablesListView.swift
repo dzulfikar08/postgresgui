@@ -115,7 +115,8 @@ struct TablesListIsolated: View {
                     refreshQueryAction: refreshQueryAction,
                     showSchemaPrefix: selectedSchema == nil
                 )
-                .listRowSeparator(.visible)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 0))
             }
 
             // "Load more" button when there are more tables to show
@@ -124,6 +125,7 @@ struct TablesListIsolated: View {
             }
         }
         .padding(.top, 8)
+        .listStyle(.sidebar)
     }
 
     private var loadMoreButton: some View {
@@ -165,8 +167,7 @@ struct TablesListIsolated: View {
             }
         }
         .padding(.top, 12)
-        .padding(.horizontal, 6)
-        .padding(.trailing, 12)
+        .listStyle(.sidebar)
     }
 }
 
@@ -360,32 +361,33 @@ struct TableColumnRowView: View {
             // Key icon for PK/FK, dot for others
             if column.isPrimaryKey {
                 Image(systemName: "key.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
                     .frame(width: 12)
             } else if column.isForeignKey {
                 Image(systemName: "key")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
                     .frame(width: 12)
             } else {
                 Image(systemName: "circle.fill")
-                    .font(.system(size: 6))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 6, weight: .semibold))
+                    .foregroundStyle(.tertiary)
                     .frame(width: 12)
             }
 
             // Column name (50%)
             Text(column.name)
-                .font(.system(.body, design: .monospaced))
+                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             // Data type (50%, right-aligned)
             Text(simplifiedType)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundColor(.secondary)
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .trailing)

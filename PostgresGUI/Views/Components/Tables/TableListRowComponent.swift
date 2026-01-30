@@ -29,7 +29,6 @@ struct TableListRowComponent: View {
 
     @State private var isHovered = false
     @State private var isButtonHovered = false
-    @State private var isChevronHovered = false
     @State private var isNameHovered = false
 
     /// Display name based on whether schema prefix should be shown
@@ -37,7 +36,12 @@ struct TableListRowComponent: View {
         showSchemaPrefix ? table.displayName : table.name
     }
 
-    private let rowControlHeight: CGFloat = 22
+    private let rowControlHeight: CGFloat = 24
+    private let rowCornerRadius: CGFloat = 6
+
+    private var rowBackground: Color {
+        isHovered ? Color.secondary.opacity(0.12) : Color.clear
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -63,18 +67,13 @@ struct TableListRowComponent: View {
                 onToggleExpanded()
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .frame(width: 12, height: rowControlHeight)
                     .padding(.horizontal, 4)
-                    .background(isChevronHovered ? Color.secondary.opacity(0.2) : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
-            .onHover { hovering in
-                isChevronHovered = hovering
-            }
 
             // Table name click shows query results
             Button {
@@ -82,16 +81,16 @@ struct TableListRowComponent: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: isNameHovered ? "play.circle.fill" : (table.tableType == .foreign ? "tablecells.fill" : "tablecells"))
-                        .foregroundColor(isNameHovered ? .green : .secondary)
+                        .foregroundStyle(isNameHovered ? .green : .secondary)
                         .frame(width: 14, alignment: .center)
                     if showSchemaPrefix && table.schema != "public" {
                         HStack(spacing: 2) {
                             Text(table.schema)
                                 .font(.system(.caption2, design: .monospaced))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                             Text(".")
                                 .font(.system(.caption2, design: .monospaced))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                             Text(table.name)
                                 .lineLimit(1)
                         }
@@ -103,8 +102,6 @@ struct TableListRowComponent: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: rowControlHeight)
                 .padding(.horizontal, 4)
-                .background(isNameHovered ? Color.secondary.opacity(0.2) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
             .onHover { hovering in
@@ -115,11 +112,11 @@ struct TableListRowComponent: View {
                     tableMenuContent
                 } label: {
                     Image(systemName: "ellipsis")
-                        .foregroundColor(isButtonHovered ? .primary : .secondary)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isButtonHovered ? .primary : .secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 6)
-                        .background(isButtonHovered ? Color.secondary.opacity(0.2) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .background(isButtonHovered ? Color.secondary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                         .opacity((isHovered || isButtonHovered) ? 1.0 : 0.0)
                 }
                 .buttonStyle(.plain)
@@ -128,9 +125,10 @@ struct TableListRowComponent: View {
                 }
             }
         }
-        .padding(.vertical, 1)
+        .padding(.vertical, 2)
         .padding(.horizontal, 6)
         .contentShape(Rectangle())
+        .background(rowBackground, in: RoundedRectangle(cornerRadius: rowCornerRadius))
         .onHover { hovering in
             isHovered = hovering
         }
