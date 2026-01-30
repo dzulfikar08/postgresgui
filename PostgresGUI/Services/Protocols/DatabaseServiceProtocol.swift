@@ -92,7 +92,7 @@ protocol DatabaseServiceProtocol: AnyObject {
         table: String,
         primaryKeyColumns: [String],
         originalRow: TableRow,
-        updatedValues: [String: String?]
+        updatedValues: [String: RowEditValue]
     ) async throws
 
     // MARK: - Metadata Operations

@@ -83,7 +83,7 @@ protocol QueryExecutorProtocol {
         table: String,
         primaryKeyColumns: [String],
         originalRow: TableRow,
-        updatedValues: [String: String?]
+        updatedValues: [String: RowEditValue]
     ) async throws
     
     /// Delete rows from a table

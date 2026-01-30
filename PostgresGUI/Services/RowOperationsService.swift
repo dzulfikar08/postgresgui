@@ -99,7 +99,7 @@ class RowOperationsService: RowOperationsServiceProtocol {
     func updateRow(
         table: TableInfo,
         originalRow: TableRow,
-        updatedValues: [String: String?],
+        updatedValues: [String: RowEditValue],
         databaseService: DatabaseServiceProtocol
     ) async -> Result<TableRow, RowOperationError> {
         // Validate primary keys exist
@@ -118,7 +118,15 @@ class RowOperationsService: RowOperationsServiceProtocol {
             )
 
             // Return updated row
-            let updatedRow = TableRow(values: updatedValues)
+            let updatedRowValues = updatedValues.reduce(into: [String: String?]()) { result, entry in
+                switch entry.value {
+                case .value(let stringValue):
+                    result[entry.key] = stringValue
+                case .null:
+                    result[entry.key] = nil
+                }
+            }
+            let updatedRow = TableRow(values: updatedRowValues)
             return .success(updatedRow)
         } catch {
             return .failure(.updateFailed(error.localizedDescription))

@@ -410,7 +410,7 @@ class DatabaseService {
         table: String,
         primaryKeyColumns: [String],
         originalRow: TableRow,
-        updatedValues: [String: String?]
+        updatedValues: [String: RowEditValue]
     ) async throws {
         guard _isConnected else {
             throw ConnectionError.notConnected
