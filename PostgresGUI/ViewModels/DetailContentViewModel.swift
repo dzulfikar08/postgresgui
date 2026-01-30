@@ -223,14 +223,11 @@ class DetailContentViewModel {
         )
 
         let isSuccess: Bool
-        let failureReason: String
         switch result {
         case .success:
             isSuccess = true
-            failureReason = ""
-        case .failure(let error):
+        case .failure:
             isSuccess = false
-            failureReason = error.localizedDescription
         }
         let canRollback = !isSuccess
             ? isSafeToRollback(versionAtOperationStart: versionBeforeDelete, currentVersion: appState.query.resultsVersion)
