@@ -41,21 +41,24 @@ class QueryResultsViewModel {
             cachedTableId: appState.query.cachedResultsTableId,
             selectedTableId: newValue
         )
-
-        // Check if we should use cached results for the selected table
-        // Clear results when table changes, UNLESS we have cached results for this table
-        if shouldClearResultsOnTableChange(
+        let shouldClear = shouldClearResultsOnTableChange(
             oldTableId: oldValue,
             newTableId: newValue,
             hasCachedResultsForNewTable: shouldUseCached
-        ) {
-            appState.query.queryColumnNames = nil
-            appState.query.queryError = nil
-            appState.query.currentPage = 0
-            appState.query.selectedRowIDs = []
-            appState.query.queryResults = []
-            appState.query.showQueryResults = false
-            appState.query.cachedResultsTableId = nil
+        )
+
+        // Check if we should use cached results for the selected table
+        // Clear results when table changes, UNLESS we have cached results for this table
+        if shouldClear {
+            if !appState.query.isRestoringFromTab {
+                appState.query.queryColumnNames = nil
+                appState.query.queryError = nil
+                appState.query.currentPage = 0
+                appState.query.selectedRowIDs = []
+                appState.query.queryResults = []
+                appState.query.showQueryResults = false
+                appState.query.cachedResultsTableId = nil
+            }
         }
 
         // Save table selection to tab

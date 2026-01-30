@@ -165,7 +165,10 @@ class SavedQueriesViewModel {
             DebugLog.print("📂 [SavedQueriesViewModel] Restored \(cached.rows.count) cached results for: \(query.name)")
         } else {
             // Clear results when switching to a query with no cached results
-            appState.query.clearQueryResults()
+            if appState.query.isRestoringFromTab {
+            } else {
+                appState.query.clearQueryResults()
+            }
             appState.query.lastExecutedAt = nil
             DebugLog.print("📂 [SavedQueriesViewModel] Cleared results (no cache) for: \(query.name)")
         }
