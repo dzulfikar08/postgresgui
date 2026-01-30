@@ -29,7 +29,7 @@ class DetailContentViewModel {
     // MARK: - Editing State
 
     var rowToEdit: TableRow?
-    var editedRowValues: [String: String?] = [:]
+    var editedRowValues: [String: RowEditValue] = [:]
 
     // MARK: - Error State
 
@@ -326,7 +326,7 @@ class DetailContentViewModel {
         }
     }
 
-    func saveEditedRow(originalRow: TableRow, updatedValues: [String: String?]) async throws {
+    func saveEditedRow(originalRow: TableRow, updatedValues: [String: RowEditValue]) async throws {
         DebugLog.print("🟡 [DetailContentViewModel.saveEditedRow] Received updatedValues: \(updatedValues)")
         DebugLog.print("  updatedValues count: \(updatedValues.count)")
 
