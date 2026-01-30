@@ -54,6 +54,10 @@ final class DelayedMockDatabaseService: DatabaseServiceProtocol {
         return queryResults
     }
 
+    func executeDisplayQuery(_ sql: String) async throws -> ([TableRow], [String]) {
+        try await executeQuery(sql)
+    }
+
     func deleteRows(schema: String, table: String, primaryKeyColumns: [String], rows: [TableRow]) async throws {}
     func updateRow(schema: String, table: String, primaryKeyColumns: [String], originalRow: TableRow, updatedValues: [String: String?]) async throws {}
     func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { [] }

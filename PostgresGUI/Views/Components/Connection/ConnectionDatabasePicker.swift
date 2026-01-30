@@ -232,6 +232,7 @@ private final class PreviewDatabaseService: DatabaseServiceProtocol {
     func generateDDL(schema: String, table: String) async throws -> String { "" }
     func fetchAllTableData(schema: String, table: String) async throws -> ([TableRow], [String]) { ([], []) }
     func executeQuery(_ sql: String) async throws -> ([TableRow], [String]) { ([], []) }
+    func executeDisplayQuery(_ sql: String) async throws -> ([TableRow], [String]) { ([], []) }
     func deleteRows(
         schema: String,
         table: String,
