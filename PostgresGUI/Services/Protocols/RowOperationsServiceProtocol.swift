@@ -34,7 +34,7 @@ protocol RowOperationsServiceProtocol {
     func updateRow(
         table: TableInfo,
         originalRow: TableRow,
-        updatedValues: [String: String?],
+        updatedValues: [String: RowEditValue],
         databaseService: DatabaseServiceProtocol
     ) async -> Result<TableRow, RowOperationError>
 }

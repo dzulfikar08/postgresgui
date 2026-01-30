@@ -36,23 +36,29 @@ class QueryResultsViewModel {
     /// to "Show All Rows" or "Show 100 Rows" to view table data.
     func handleTableSelectionChange(oldValue: String?, newValue: String?) {
         let table = appState.connection.selectedTable
-
-        // Check if we should use cached results for the selected table
         let shouldUseCached = shouldUseCachedResults(
             hasResults: !appState.query.queryResults.isEmpty,
             cachedTableId: appState.query.cachedResultsTableId,
             selectedTableId: newValue
         )
-
-        // Clear results when table changes, UNLESS we have cached results for this table
-        if shouldClearResultsOnTableChange(
+        let shouldClear = shouldClearResultsOnTableChange(
             oldTableId: oldValue,
             newTableId: newValue,
             hasCachedResultsForNewTable: shouldUseCached
-        ) {
-            appState.query.queryColumnNames = nil
-            appState.query.queryError = nil
-            appState.query.currentPage = 0
+        )
+
+        // Check if we should use cached results for the selected table
+        // Clear results when table changes, UNLESS we have cached results for this table
+        if shouldClear {
+            if !appState.query.isRestoringFromTab {
+                appState.query.queryColumnNames = nil
+                appState.query.queryError = nil
+                appState.query.currentPage = 0
+                appState.query.selectedRowIDs = []
+                appState.query.queryResults = []
+                appState.query.showQueryResults = false
+                appState.query.cachedResultsTableId = nil
+            }
         }
 
         // Save table selection to tab

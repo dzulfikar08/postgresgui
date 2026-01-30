@@ -29,7 +29,7 @@ class DetailContentViewModel {
     // MARK: - Editing State
 
     var rowToEdit: TableRow?
-    var editedRowValues: [String: String?] = [:]
+    var editedRowValues: [String: RowEditValue] = [:]
 
     // MARK: - Error State
 
@@ -47,6 +47,21 @@ class DetailContentViewModel {
             sourceSchema: appState.connection.selectedTable?.schema
         )
         return determineQueryEditability(context)
+    }
+
+    /// Whether results are read-only due to context mismatch
+    var isEditingDisabledDueToContextMismatch: Bool {
+        appState.query.isResultsReadOnlyDueToContextMismatch
+    }
+
+    static let contextMismatchHelpText =
+        "Editing disabled because results are from a different connection/database."
+
+    private var contextMismatchReason: EditabilityReason {
+        EditabilityReason(
+            title: "Read-Only Results",
+            body: Self.contextMismatchHelpText
+        )
     }
 
     // MARK: - Initialization
@@ -110,6 +125,11 @@ class DetailContentViewModel {
     func deleteSelectedRows() {
         DebugLog.print("🗑️ [DetailContentViewModel] Delete button clicked for \(appState.query.selectedRowIDs.count) row(s)")
 
+        if isEditingDisabledDueToContextMismatch {
+            deleteError = contextMismatchReason
+            return
+        }
+
         // Check if query results are editable (same constraints as edit)
         let editability = queryEditability
         guard editability.isEditable else {
@@ -117,7 +137,25 @@ class DetailContentViewModel {
             return
         }
 
-        guard let selectedTable = appState.connection.selectedTable else {
+        let resolvedTable: TableInfo? = {
+            if let selectedTable = appState.connection.selectedTable {
+                return selectedTable
+            }
+
+            guard let tableName = editability.tableName else { return nil }
+            let candidateTables: [TableInfo]
+            if let schemaName = editability.schemaName {
+                candidateTables = appState.connection.tables.filter {
+                    $0.name == tableName && $0.schema == schemaName
+                }
+            } else {
+                candidateTables = appState.connection.tables.filter { $0.name == tableName }
+            }
+
+            return candidateTables.count == 1 ? candidateTables.first : nil
+        }()
+
+        guard let selectedTable = resolvedTable else {
             deleteError = EditabilityReason(
                 title: "No Table Selected",
                 body: "Select a table from the sidebar to delete rows."
@@ -193,7 +231,6 @@ class DetailContentViewModel {
 
         // Capture results version before async operation
         let versionBeforeDelete = appState.query.resultsVersion
-
         // Optimistic UI update: remove rows immediately
         appState.query.queryResults.removeAll { deletedIDs.contains($0.id) }
         appState.query.selectedRowIDs = []
@@ -205,9 +242,19 @@ class DetailContentViewModel {
             databaseService: appState.connection.databaseService
         )
 
+        let isSuccess: Bool
+        switch result {
+        case .success:
+            isSuccess = true
+        case .failure:
+            isSuccess = false
+        }
+        let canRollback = !isSuccess
+            ? isSafeToRollback(versionAtOperationStart: versionBeforeDelete, currentVersion: appState.query.resultsVersion)
+            : false
         // Rollback on failure (only if results haven't been replaced by a refresh)
         if case .failure(let error) = result {
-            if isSafeToRollback(versionAtOperationStart: versionBeforeDelete, currentVersion: appState.query.resultsVersion) {
+            if canRollback {
                 // Safe to rollback - results haven't changed
                 for (index, row) in rowsWithIndices.sorted(by: { $0.index < $1.index }) {
                     let insertIndex = min(index, appState.query.queryResults.count)
@@ -225,6 +272,11 @@ class DetailContentViewModel {
 
     func editSelectedRows() {
         DebugLog.print("✏️ [DetailContentViewModel] Edit button clicked for \(appState.query.selectedRowIDs.count) row(s)")
+
+        if isEditingDisabledDueToContextMismatch {
+            editError = contextMismatchReason
+            return
+        }
 
         // Check if query results are editable
         let editability = queryEditability
@@ -326,7 +378,7 @@ class DetailContentViewModel {
         }
     }
 
-    func saveEditedRow(originalRow: TableRow, updatedValues: [String: String?]) async throws {
+    func saveEditedRow(originalRow: TableRow, updatedValues: [String: RowEditValue]) async throws {
         DebugLog.print("🟡 [DetailContentViewModel.saveEditedRow] Received updatedValues: \(updatedValues)")
         DebugLog.print("  updatedValues count: \(updatedValues.count)")
 
@@ -374,6 +426,9 @@ class DetailContentViewModel {
             appState.query.resultsVersion += 1
         }
         appState.query.finishQueryExecution(with: result)
+        if result.isSuccess {
+            appState.query.isResultsReadOnlyDueToContextMismatch = false
+        }
 
         if result.isSuccess {
             DebugLog.print("✅ [DetailContentViewModel] Query executed successfully, showing results")

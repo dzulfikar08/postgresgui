@@ -248,6 +248,19 @@ class DatabaseService {
     /// Supports multi-statement scripts by splitting and executing sequentially
     /// Wraps in transaction for atomicity (unless user already has transaction commands)
     func executeQuery(_ sql: String) async throws -> ([TableRow], [String]) {
+        try await executeQueryInternal(sql, wrapPolicy: .none)
+    }
+
+    /// Execute SQL intended for query results display
+    /// Wraps select queries for safe display formatting
+    func executeDisplayQuery(_ sql: String) async throws -> ([TableRow], [String]) {
+        try await executeQueryInternal(sql, wrapPolicy: .wrapSelectResults)
+    }
+
+    private func executeQueryInternal(
+        _ sql: String,
+        wrapPolicy: QueryWrapPolicy
+    ) async throws -> ([TableRow], [String]) {
         guard _isConnected else {
             throw ConnectionError.notConnected
         }
@@ -268,7 +281,12 @@ class DatabaseService {
         // Single statement - no transaction wrapper needed
         if statements.count == 1 {
             return try await connectionManager.withConnection { conn in
-                try await self.queryExecutor.executeQuery(connection: conn, sql: statements[0])
+                let wrappedQuery = QueryWrapper.wrapIfNeeded(sql: statements[0], policy: wrapPolicy)
+                let (rows, columnNames) = try await self.queryExecutor.executeQuery(
+                    connection: conn,
+                    sql: wrappedQuery.sql
+                )
+                return (rows, self.normalizedColumnNames(columnNames, wrappedQuery: wrappedQuery))
             }
         }
 
@@ -286,14 +304,16 @@ class DatabaseService {
                 }
 
                 for statement in statements {
+                    let wrappedQuery = QueryWrapper.wrapIfNeeded(sql: statement, policy: wrapPolicy)
                     let (rows, columnNames) = try await self.queryExecutor.executeQuery(
                         connection: conn,
-                        sql: statement
+                        sql: wrappedQuery.sql
                     )
+                    let normalizedColumns = self.normalizedColumnNames(columnNames, wrappedQuery: wrappedQuery)
 
-                    if !rows.isEmpty {
+                    if wrappedQuery.isWrapped || !rows.isEmpty {
                         lastRows = rows
-                        lastColumnNames = columnNames
+                        lastColumnNames = normalizedColumns
                     }
                 }
 
@@ -309,6 +329,16 @@ class DatabaseService {
 
             return (lastRows, lastColumnNames)
         }
+    }
+
+    private func normalizedColumnNames(
+        _ columnNames: [String],
+        wrappedQuery: WrappedQuery
+    ) -> [String] {
+        guard let expected = wrappedQuery.expectedColumnNames else {
+            return columnNames
+        }
+        return expected
     }
 
     /// Check if SQL contains transaction control commands
@@ -380,7 +410,7 @@ class DatabaseService {
         table: String,
         primaryKeyColumns: [String],
         originalRow: TableRow,
-        updatedValues: [String: String?]
+        updatedValues: [String: RowEditValue]
     ) async throws {
         guard _isConnected else {
             throw ConnectionError.notConnected

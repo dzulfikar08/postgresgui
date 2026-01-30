@@ -20,9 +20,15 @@ class AppState {
 
     private let tableMetadataService: TableMetadataServiceProtocol
 
+    // MARK: - Tab Manager (for caching query results)
+
+    weak var tabManager: TabManager?
+
     // MARK: - Debounce State
 
     private var schemaSearchPathTask: Task<Void, Never>?
+    private var tableQueryTask: Task<Void, Never>?
+    private var tableQueryRequestId: Int = 0
 
     // MARK: - Initialization
 
@@ -46,12 +52,35 @@ class AppState {
 
     // MARK: - Query Execution
 
+    /// Request a table query and cancel any in-flight table query task.
+    @MainActor
+    func requestTableQuery(for table: TableInfo, limit: Int? = nil) {
+        tableQueryTask?.cancel()
+        tableQueryRequestId += 1
+        let requestId = tableQueryRequestId
+
+        tableQueryTask = Task { @MainActor in
+            guard !Task.isCancelled else { return }
+            connection.selectedTable = table
+            await executeTableQueryInternal(for: table, limit: limit, requestId: requestId)
+        }
+    }
+
     /// Centralized query execution to prevent race conditions when rapidly switching tables
     /// - Parameters:
     ///   - table: The table to query
     ///   - limit: Optional row limit. If nil, uses pagination (rowsPerPage). If specified, uses that exact limit with no pagination.
     @MainActor
     func executeTableQuery(for table: TableInfo, limit: Int? = nil) async {
+        tableQueryTask?.cancel()
+        tableQueryTask = nil
+        tableQueryRequestId += 1
+        let requestId = tableQueryRequestId
+        await executeTableQueryInternal(for: table, limit: limit, requestId: requestId)
+    }
+
+    @MainActor
+    private func executeTableQueryInternal(for table: TableInfo, limit: Int?, requestId: Int) async {
         // Capture context to verify nothing changed after async operations
         // This prevents stale query results when user switches table, database, or connection
         let tableId = table.id
@@ -88,6 +117,11 @@ class AppState {
             offset: isPaginated ? calculateOffset(page: query.currentPage, pageSize: query.rowsPerPage) : 0
         )
 
+        guard requestId == tableQueryRequestId else {
+            DebugLog.print("⚠️ [AppState] Query for \(table.name) superseded (newer request), skipping state update")
+            return
+        }
+
         // Only update state if context hasn't changed (table, database, AND connection)
         // Prevents stale results when same table name exists in different databases
         guard connection.isQueryContextValid(
@@ -118,6 +152,14 @@ class AppState {
                 query.hasNextPage = false
                 query.finishQueryExecution(with: result)
             }
+            query.isResultsReadOnlyDueToContextMismatch = false
+
+            // Cache results to active tab for restoration on tab switch
+            query.cachedResultsTableId = table.id
+            tabManager?.updateActiveTabResults(
+                results: query.queryResults,
+                columnNames: query.queryColumnNames
+            )
 
             // Fetch table metadata (primary keys, column info) for edit/delete operations
             await fetchTableMetadata(for: table)
@@ -185,6 +227,7 @@ class AppState {
 
         // Cancel any pending queries
         query.cleanup()
+        tableQueryTask?.cancel()
 
         // Disconnect and reset connection state
         await connection.cleanupOnWindowClose()

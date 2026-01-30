@@ -56,6 +56,7 @@ enum Constants {
     enum UserDefaultsKeys {
         static let lastConnectionId = "lastConnectionId"
         static let lastDatabaseName = "lastDatabaseName"
+        static let queryResultsDateFormat = "queryResultsDateFormat"
     }
 
     // Timeouts
@@ -63,5 +64,86 @@ enum Constants {
         /// Default timeout for database operations (queries, table loading)
         /// Set to 5 minutes to allow long-running queries while still providing safety
         static let databaseOperation: TimeInterval = 300.0
+    }
+}
+
+enum QueryResultsDateFormat: String, CaseIterable, Identifiable {
+    case iso8601
+    case iso8601DateOnly
+    case us
+    case european
+    case relative
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .iso8601:
+            return "ISO 8601"
+        case .iso8601DateOnly:
+            return "ISO 8601 (date only)"
+        case .us:
+            return "US"
+        case .european:
+            return "European"
+        case .relative:
+            return "Relative"
+        }
+    }
+
+    var example: String {
+        switch self {
+        case .relative:
+            return Self.relativeFormatter.localizedString(
+                for: Date().addingTimeInterval(-7200),
+                relativeTo: Date()
+            )
+        default:
+            return formatter.string(from: Self.sampleDate)
+        }
+    }
+
+    var formatter: DateFormatter {
+        switch self {
+        case .iso8601:
+            return Self.iso8601DateTimeFormatter
+        case .iso8601DateOnly:
+            return Self.iso8601DateFormatter
+        case .us:
+            return Self.usFormatter
+        case .european:
+            return Self.europeanFormatter
+        case .relative:
+            return Self.iso8601DateTimeFormatter
+        }
+    }
+
+    private static let sampleDate: Date = {
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 1
+        components.day = 14
+        components.hour = 10
+        components.minute = 30
+        components.second = 45
+        return Calendar.current.date(from: components) ?? Date()
+    }()
+
+    private static let iso8601DateTimeFormatter = makeFormatter("yyyy-MM-dd HH:mm:ss")
+    private static let iso8601DateFormatter = makeFormatter("yyyy-MM-dd")
+    private static let usFormatter = makeFormatter("MM/dd/yyyy h:mm a")
+    private static let europeanFormatter = makeFormatter("dd/MM/yyyy HH:mm")
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
+
+    private static func makeFormatter(_ format: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = format
+        return formatter
     }
 }

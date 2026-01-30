@@ -16,7 +16,7 @@ struct RowEditorView: View {
     let tableName: String
     let columnInfo: [ColumnInfo]
     let primaryKeyColumns: [String]
-    @Binding var editedValues: [String: String?]
+    @Binding var editedValues: [String: RowEditValue]
     let onSave: () async throws -> Void
 
     @State private var textValues: [String: String] = [:]
@@ -28,13 +28,20 @@ struct RowEditorView: View {
         Set(primaryKeyColumns)
     }
 
+    private var displayColumnNames: [String] {
+        let pkSet = Set(primaryKeyColumns)
+        let pkOrdered = primaryKeyColumns.filter { columnNames.contains($0) }
+        let nonPkOrdered = columnNames.filter { !pkSet.contains($0) }
+        return pkOrdered + nonPkOrdered
+    }
+
     init(
         row: TableRow,
         columnNames: [String],
         tableName: String,
         columnInfo: [ColumnInfo],
         primaryKeyColumns: [String],
-        editedValues: Binding<[String: String?]>,
+        editedValues: Binding<[String: RowEditValue]>,
         onSave: @escaping () async throws -> Void
     ) {
         self.row = row
@@ -73,7 +80,7 @@ struct RowEditorView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(columnNames, id: \.self) { columnName in
+                        ForEach(displayColumnNames, id: \.self) { columnName in
                             formRow(columnName: columnName)
                         }
                     }
@@ -118,6 +125,8 @@ struct RowEditorView: View {
         let column = columnInfo.first { $0.name == columnName }
         let isNullable = column?.isNullable ?? true
         let isPrimaryKey = primaryKeySet.contains(columnName)
+        let dataType = column?.dataType
+        let dateFieldKind = datePickerKind(for: dataType)
 
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
@@ -140,7 +149,11 @@ struct RowEditorView: View {
             if isPrimaryKey {
                 primaryKeyDisplay(columnName: columnName)
             } else {
-                editableField(columnName: columnName, isNullable: isNullable)
+                editableField(
+                    columnName: columnName,
+                    isNullable: isNullable,
+                    dateFieldKind: dateFieldKind
+                )
             }
         }
         .padding(.vertical, 6)
@@ -169,13 +182,25 @@ struct RowEditorView: View {
     // MARK: - Editable Field Router
 
     @ViewBuilder
-    private func editableField(columnName: String, isNullable: Bool) -> some View {
+    private func editableField(
+        columnName: String,
+        isNullable: Bool,
+        dateFieldKind: DatePickerKind
+    ) -> some View {
         let isNull = nullFlags[columnName] ?? false
 
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center, spacing: 8) {
                 Group {
-                    singleLineTextField(columnName: columnName, isDisabled: isNull)
+                    if dateFieldKind == .none {
+                        singleLineTextField(columnName: columnName, isDisabled: isNull)
+                    } else {
+                        datePickerField(
+                            columnName: columnName,
+                            kind: dateFieldKind,
+                            isDisabled: isNull
+                        )
+                    }
                 }
 
                 if isNullable {
@@ -220,6 +245,125 @@ struct RowEditorView: View {
         .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
     }
 
+    private func datePickerKind(for dataType: String?) -> DatePickerKind {
+        guard let dataType = dataType?.lowercased() else {
+            return .none
+        }
+        if dataType == "date" {
+            return .date
+        }
+        if dataType.contains("timestamp") {
+            return .dateTime
+        }
+        if dataType.contains("time") {
+            return .time
+        }
+        return .none
+    }
+
+    private func datePickerField(
+        columnName: String,
+        kind: DatePickerKind,
+        isDisabled: Bool
+    ) -> some View {
+        DatePicker(
+            "",
+            selection: Binding(
+                get: { dateValue(for: columnName) ?? Date() },
+                set: { newValue in
+                    textValues[columnName] = formatDate(newValue, kind: kind)
+                }
+            ),
+            displayedComponents: kind.displayedComponents
+        )
+        .datePickerStyle(.field)
+        .labelsHidden()
+        .disabled(isDisabled)
+        .frame(maxWidth: 380, alignment: .leading)
+    }
+
+    private func dateValue(for columnName: String) -> Date? {
+        guard let text = textValues[columnName], !text.isEmpty else {
+            return nil
+        }
+        if let date = iso8601Formatter.date(from: text) {
+            return date
+        }
+        for formatter in parseFormatters {
+            if let date = formatter.date(from: text) {
+                return date
+            }
+        }
+        return nil
+    }
+
+    private func formatDate(_ date: Date, kind: DatePickerKind) -> String {
+        switch kind {
+        case .date:
+            return dateOnlyFormatter.string(from: date)
+        case .time:
+            return timeOnlyFormatter.string(from: date)
+        case .dateTime:
+            return dateTimeFormatter.string(from: date)
+        case .none:
+            return ""
+        }
+    }
+
+    private var iso8601Formatter: ISO8601DateFormatter {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }
+
+    private var parseFormatters: [DateFormatter] {
+        let dateTimeWithZone = DateFormatter()
+        dateTimeWithZone.locale = Locale(identifier: "en_US_POSIX")
+        dateTimeWithZone.timeZone = TimeZone.current
+        dateTimeWithZone.dateFormat = "yyyy-MM-dd HH:mm:ssXXXXX"
+
+        let dateTime = DateFormatter()
+        dateTime.locale = Locale(identifier: "en_US_POSIX")
+        dateTime.timeZone = TimeZone.current
+        dateTime.dateFormat = "yyyy-MM-dd HH:mm:ss"
+
+        let dateOnly = DateFormatter()
+        dateOnly.locale = Locale(identifier: "en_US_POSIX")
+        dateOnly.timeZone = TimeZone.current
+        dateOnly.dateFormat = "yyyy-MM-dd"
+
+        let timeOnly = DateFormatter()
+        timeOnly.locale = Locale(identifier: "en_US_POSIX")
+        timeOnly.timeZone = TimeZone.current
+        timeOnly.dateFormat = "HH:mm:ss"
+
+        return [dateTimeWithZone, dateTime, dateOnly, timeOnly]
+    }
+
+    private var dateOnlyFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }
+
+    private var timeOnlyFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }
+
+    private var dateTimeFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ssXXXXX"
+        return formatter
+    }
+
     private func save() async {
         isSaving = true
 
@@ -230,15 +374,15 @@ struct RowEditorView: View {
         DebugLog.print("  nullFlags: \(nullFlags)")
 
         // Combine textValues and nullFlags into editedValues
-        var finalValues: [String: String?] = [:]
+        var finalValues: [String: RowEditValue] = [:]
         for columnName in columnNames {
             if nullFlags[columnName] ?? false {
                 DebugLog.print("    Setting \(columnName) = nil")
-                finalValues[columnName] = nil
+                finalValues[columnName] = .null
             } else {
                 let value = textValues[columnName] ?? ""
                 DebugLog.print("    Setting \(columnName) = '\(value)'")
-                finalValues[columnName] = value
+                finalValues[columnName] = .value(value)
             }
         }
 
@@ -264,5 +408,25 @@ struct RowEditorView: View {
         }
 
         isSaving = false
+    }
+}
+
+private enum DatePickerKind: String {
+    case none
+    case date
+    case time
+    case dateTime
+
+    var displayedComponents: DatePickerComponents {
+        switch self {
+        case .date:
+            return [.date]
+        case .time:
+            return [.hourAndMinute]
+        case .dateTime:
+            return [.date, .hourAndMinute]
+        case .none:
+            return []
+        }
     }
 }

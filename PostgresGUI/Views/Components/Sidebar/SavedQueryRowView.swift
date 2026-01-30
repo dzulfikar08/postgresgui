@@ -39,16 +39,33 @@ struct SavedQueryRowView: View {
         selectedFolderCount > 0
     }
 
+    private var cachedRowCount: Int {
+        appState.query.getCachedResults(for: query.id)?.rows.count ?? 0
+    }
+
+    private var shouldShowCachedRowCount: Bool {
+        cachedRowCount > 0
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            // Show loading indicator or document icon
+            // Show loading indicator or document icon, with optional cached-results dot
             if isExecuting {
                 ProgressView()
                     .scaleEffect(0.5)
                     .frame(width: 16, height: 16)
             } else {
-                Image(systemName: "doc.text")
-                    .foregroundColor(.secondary)
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "doc.text")
+                        .foregroundColor(.secondary)
+                    if shouldShowCachedRowCount {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 2, y: -2)
+                    }
+                }
+                .frame(width: 16, height: 16)
             }
             Text(query.name)
                 .lineLimit(1)

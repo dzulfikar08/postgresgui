@@ -438,7 +438,7 @@ struct PostgresQueryExecutor: QueryExecutorProtocol {
         table: String,
         primaryKeyColumns: [String],
         originalRow: TableRow,
-        updatedValues: [String: String?]
+        updatedValues: [String: RowEditValue]
     ) async throws {
         guard !primaryKeyColumns.isEmpty else {
             throw DatabaseError.noPrimaryKey
@@ -452,9 +452,10 @@ struct PostgresQueryExecutor: QueryExecutorProtocol {
 
         var setClauses: [String] = []
         for (column, value) in updatedValues where !pkSet.contains(column) {
-            if let val = value {
+            switch value {
+            case .value(let val):
                 setClauses.append("\(sanitizeIdentifier(column)) = '\(val.replacingOccurrences(of: "'", with: "''"))'")
-            } else {
+            case .null:
                 setClauses.append("\(sanitizeIdentifier(column)) = NULL")
             }
         }

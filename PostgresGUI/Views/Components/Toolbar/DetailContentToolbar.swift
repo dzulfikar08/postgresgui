@@ -16,31 +16,75 @@ struct DetailContentToolbar: ToolbarContent {
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .automatic) {
             // JSON Viewer button
-            Button(action: {
-                viewModel.openJSONView()
-            }) {
-                Image(systemName: "square.and.arrow.down")
-            }
-            .help("View selected rows as JSON")
-            .disabled(appState.query.selectedRowIDs.isEmpty)
+            ToolbarIconButton(
+                systemName: "square.and.arrow.down",
+                action: { viewModel.openJSONView() },
+                isDisabled: appState.query.selectedRowIDs.isEmpty,
+                helpText: "View selected rows as JSON",
+                useHoverPopover: false
+            )
 
             // Edit button
-            Button(action: {
-                viewModel.editSelectedRows()
-            }) {
-                Image(systemName: "square.and.pencil")
-            }
-            .help("Edit selected row")
-            .disabled(appState.query.selectedRowIDs.isEmpty)
+            ToolbarIconButton(
+                systemName: "square.and.pencil",
+                action: { viewModel.editSelectedRows() },
+                isDisabled: appState.query.selectedRowIDs.isEmpty || viewModel.isEditingDisabledDueToContextMismatch,
+                helpText: viewModel.isEditingDisabledDueToContextMismatch
+                    ? DetailContentViewModel.contextMismatchHelpText
+                    : "Edit selected row",
+                useHoverPopover: viewModel.isEditingDisabledDueToContextMismatch
+            )
 
             // Delete button
-            Button(action: {
-                viewModel.deleteSelectedRows()
-            }) {
-                Image(systemName: "trash")
+            ToolbarIconButton(
+                systemName: "trash",
+                action: { viewModel.deleteSelectedRows() },
+                isDisabled: appState.query.selectedRowIDs.isEmpty || viewModel.isEditingDisabledDueToContextMismatch,
+                helpText: viewModel.isEditingDisabledDueToContextMismatch
+                    ? DetailContentViewModel.contextMismatchHelpText
+                    : "Delete selected rows",
+                useHoverPopover: viewModel.isEditingDisabledDueToContextMismatch
+            )
+        }
+    }
+}
+
+private struct ToolbarIconButton: View {
+    let systemName: String
+    let action: () -> Void
+    let isDisabled: Bool
+    let helpText: String
+    let useHoverPopover: Bool
+
+    @State private var isHovered = false
+
+    var body: some View {
+        ZStack {
+            Button(action: action) {
+                Image(systemName: systemName)
             }
-            .help("Delete selected rows")
-            .disabled(appState.query.selectedRowIDs.isEmpty)
+            .disabled(isDisabled)
+        }
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .help(useHoverPopover ? "" : helpText)
+        .popover(
+            isPresented: Binding(
+                get: { useHoverPopover && isHovered },
+                set: { newValue in
+                    if !newValue {
+                        isHovered = false
+                    }
+                }
+            ),
+            arrowEdge: .bottom
+        ) {
+            Text(helpText)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 280, alignment: .center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(8)
         }
     }
 }

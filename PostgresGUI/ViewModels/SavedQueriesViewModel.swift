@@ -162,16 +162,29 @@ class SavedQueriesViewModel {
         if let cached = appState.query.getCachedResults(for: query.id) {
             appState.query.updateQueryResults(cached.rows, columnNames: cached.columnNames)
             appState.query.lastExecutedAt = cached.executedAt
+            appState.query.isResultsReadOnlyDueToContextMismatch = isCachedResultsContextMismatch(for: query)
             DebugLog.print("📂 [SavedQueriesViewModel] Restored \(cached.rows.count) cached results for: \(query.name)")
         } else {
-            // Clear results when switching to a query with no cached results
-            appState.query.clearQueryResults()
+            // Keep existing results when switching to a query with no cached results
             appState.query.lastExecutedAt = nil
-            DebugLog.print("📂 [SavedQueriesViewModel] Cleared results (no cache) for: \(query.name)")
+            appState.query.isResultsReadOnlyDueToContextMismatch = false
+            DebugLog.print("📂 [SavedQueriesViewModel] No cached results; preserving existing results for: \(query.name)")
         }
 
         appState.query.statusMessage = nil
         DebugLog.print("📂 [SavedQueriesViewModel] Loaded query: \(query.name)")
+    }
+
+    private func isCachedResultsContextMismatch(for query: SavedQuery) -> Bool {
+        let savedConnectionId = query.connectionId
+        let savedDatabaseName = query.databaseName
+        let currentConnectionId = appState.connection.currentConnection?.id
+        let currentDatabaseName = appState.connection.selectedDatabase?.name
+
+        let connectionMismatch = savedConnectionId != nil && savedConnectionId != currentConnectionId
+        let databaseMismatch = savedDatabaseName != nil && savedDatabaseName != currentDatabaseName
+
+        return connectionMismatch || databaseMismatch
     }
 
     func duplicateQuery(_ query: SavedQuery, modelContext: ModelContext) {

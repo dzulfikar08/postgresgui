@@ -148,6 +148,7 @@ class QueryEditorViewModel {
                 if isStillActiveTab && isSameSavedQuery {
                     appState.query.finishQueryExecution(with: result)
                     appState.query.setTemporaryStatus("Executed in \(QueryState.formatExecutionTime(result.executionTime))")
+                    appState.query.isResultsReadOnlyDueToContextMismatch = false
                 }
                 DebugLog.print("✅ [QueryEditorViewModel] Query executed, showing \(result.rows.count) results")
 

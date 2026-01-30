@@ -25,33 +25,32 @@ struct QueryEditorComponent: View {
     var body: some View {
         VStack(spacing: 0) {
             // Toolbar with execute/cancel button and stats
-            HStack(spacing: 4) {
-                if isExecuting {
-                    // Cancel Query button when this query is executing
-                    Button(action: onCancelQuery) {
-                        Label {
-                            Text("Cancel Query")
-                        } icon: {
-                            Image(systemName: "xmark.circle.fill")
-                        }
+            HStack(spacing: 0) {
+                // Always show Run Query button
+                Button(action: onRunQuery) {
+                    Label {
+                        Text("Run Query")
+                    } icon: {
+                        Image(systemName: "play.circle.fill")
                     }
-                    .buttonStyle(.glass)
-                    .clipShape(Capsule())
+                }
+                .buttonStyle(.glass)
+                .clipShape(Capsule())
+                .tint(.green)
+                .keyboardShortcut(.return, modifiers: [.command])
+
+                // Show Stop button only after 3s of execution
+                if isExecuting && displayedElapsedTime > 3 {
+                    Button(action: onCancelQuery) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 16, height: 16)
+                    }
+                    .buttonStyle(.bordered)
+                    .glassEffect(.regular.interactive())
+                    .clipShape(Circle())
                     .tint(.red)
                     .keyboardShortcut(.escape, modifiers: [])
-                } else {
-                    // Run Query button when not executing
-                    Button(action: onRunQuery) {
-                        Label {
-                            Text("Run Query")
-                        } icon: {
-                            Image(systemName: "play.circle.fill")
-                        }
-                    }
-                    .buttonStyle(.glass)
-                    .clipShape(Capsule())
-                    .tint(.green)
-                    .keyboardShortcut(.return, modifiers: [.command])
                 }
 
                 Spacer()
@@ -71,8 +70,6 @@ struct QueryEditorComponent: View {
     private var statusView: some View {
         if isExecuting {
             HStack(spacing: 4) {
-                ProgressView()
-                    .scaleEffect(0.5)
                 Text(QueryState.formatElapsedTime(displayedElapsedTime))
                     .foregroundColor(.secondary)
                     .font(.system(size: Constants.FontSize.small, design: .monospaced))

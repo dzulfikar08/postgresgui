@@ -27,14 +27,16 @@ class QueryService: QueryServiceProtocol {
 
         do {
             let (rows, columnNames) = try await withDatabaseTimeout {
-                try await self.databaseService.executeQuery(sql)
+                try await self.databaseService.executeDisplayQuery(sql)
             }
+            let (normalizedRows, normalizedColumnNames) = QueryResultNormalizer
+                .normalizeDisplayRows(rows: rows, columnNames: columnNames)
             let endTime = clock.now()
             let executionTime = endTime.timeIntervalSince(startTime)
 
             return .success(
-                rows: rows,
-                columnNames: columnNames,
+                rows: normalizedRows,
+                columnNames: normalizedColumnNames,
                 executionTime: executionTime
             )
         } catch {
@@ -73,8 +75,10 @@ class QueryService: QueryServiceProtocol {
             do {
                 DebugLog.print("📊 [QueryService] Executing query... (ID: \(thisQueryID))")
                 let (rows, columnNames) = try await withDatabaseTimeout {
-                    try await self.databaseService.executeQuery(query)
+                    try await self.databaseService.executeDisplayQuery(query)
                 }
+                let (normalizedRows, normalizedColumnNames) = QueryResultNormalizer
+                    .normalizeDisplayRows(rows: rows, columnNames: columnNames)
 
                 // Check if task was cancelled or a newer query has started
                 guard !Task.isCancelled, thisQueryID == queryState.queryCounter else {
@@ -86,8 +90,8 @@ class QueryService: QueryServiceProtocol {
                 let executionTime = endTime.timeIntervalSince(startTime)
 
                 result = .success(
-                    rows: rows,
-                    columnNames: columnNames,
+                    rows: normalizedRows,
+                    columnNames: normalizedColumnNames,
                     executionTime: executionTime
                 )
 

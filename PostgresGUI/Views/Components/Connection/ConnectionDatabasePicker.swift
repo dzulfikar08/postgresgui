@@ -207,3 +207,87 @@ struct ConnectionDatabasePicker: View {
         }
     }
 }
+
+private final class PreviewDatabaseService: DatabaseServiceProtocol {
+    var isConnected: Bool { true }
+    var connectedDatabase: String? { "postgres" }
+
+    func connect(
+        host: String,
+        port: Int,
+        username: String,
+        password: String,
+        database: String,
+        sslMode: SSLMode
+    ) async throws { }
+    func disconnect() async { }
+    func shutdown() async { }
+    func fetchDatabases() async throws -> [DatabaseInfo] { [] }
+    func createDatabase(name: String) async throws { }
+    func deleteDatabase(name: String) async throws { }
+    func fetchTables(database: String) async throws -> [TableInfo] { [] }
+    func fetchSchemas(database: String) async throws -> [String] { [] }
+    func deleteTable(schema: String, table: String) async throws { }
+    func truncateTable(schema: String, table: String) async throws { }
+    func generateDDL(schema: String, table: String) async throws -> String { "" }
+    func fetchAllTableData(schema: String, table: String) async throws -> ([TableRow], [String]) { ([], []) }
+    func executeQuery(_ sql: String) async throws -> ([TableRow], [String]) { ([], []) }
+    func executeDisplayQuery(_ sql: String) async throws -> ([TableRow], [String]) { ([], []) }
+    func deleteRows(
+        schema: String,
+        table: String,
+        primaryKeyColumns: [String],
+        rows: [TableRow]
+    ) async throws { }
+    func updateRow(
+        schema: String,
+        table: String,
+        primaryKeyColumns: [String],
+        originalRow: TableRow,
+        updatedValues: [String: RowEditValue]
+    ) async throws { }
+    func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { [] }
+    func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { [] }
+}
+
+private struct ConnectionDatabasePickerPreview: View {
+    @State private var showConnectionDropdown = false
+    @State private var showDatabaseDropdown = true
+
+    private let appState = AppState(connection: ConnectionState(databaseService: PreviewDatabaseService()))
+    private let connections: [ConnectionProfile] = [
+        ConnectionProfile(name: "Local Postgres", host: "localhost", username: "postgres"),
+        ConnectionProfile(name: "Analytics", host: "analytics.internal", username: "reporting")
+    ]
+
+    var body: some View {
+        appState.connection.currentConnection = connections.first
+        appState.connection.databases = [
+            DatabaseInfo(name: "postgres", tableCount: 42),
+            DatabaseInfo(name: "analytics", tableCount: 18),
+            DatabaseInfo(name: "staging", tableCount: 12)
+        ]
+        appState.connection.selectedDatabase = appState.connection.databases.first
+
+        return ConnectionDatabasePicker(
+            showConnectionDropdown: $showConnectionDropdown,
+            connections: connections,
+            onSelectConnection: { _ in },
+            onEditConnection: { _ in },
+            onDeleteConnection: { _ in },
+            onCreateConnection: { },
+            showDatabaseDropdown: $showDatabaseDropdown,
+            onSelectDatabase: { _ in },
+            onDeleteDatabase: { _ in },
+            onCreateDatabase: { },
+            onDeleteError: { _ in }
+        )
+        .environment(appState)
+        .frame(width: 420)
+        .padding()
+    }
+}
+
+#Preview("Database Dropdown") {
+    ConnectionDatabasePickerPreview()
+}

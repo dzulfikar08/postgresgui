@@ -67,6 +67,10 @@ final class MockDatabaseService: DatabaseServiceProtocol {
         return ([], [])
     }
 
+    func executeDisplayQuery(_ sql: String) async throws -> ([TableRow], [String]) {
+        return ([], [])
+    }
+
     func deleteRows(schema: String, table: String, primaryKeyColumns: [String], rows: [TableRow]) async throws {
     }
 

@@ -31,6 +31,7 @@ class QueryState {
     var lastQueryText: String? = nil  // For retry on timeout
     var queryExecutionTime: TimeInterval? = nil
     var selectedRowIDs: Set<UUID> = []
+    var isResultsReadOnlyDueToContextMismatch: Bool = false
 
     // In-memory cache for SavedQuery results (keyed by SavedQuery.id)
     private var savedQueryResultsCache: [UUID: CachedQueryResult] = [:]
@@ -129,7 +130,7 @@ class QueryState {
     ) {
         timer?.cancel()
         setValue()
-        timer = Task {
+        timer = Task { @MainActor in
             try? await Task.sleep(nanoseconds: duration.nanoseconds)
             guard !Task.isCancelled else { return }
             clearValue()
@@ -217,6 +218,7 @@ class QueryState {
             }
         }
         isExecutingQuery = false
+
     }
 
     /// Update query results and column names
@@ -224,6 +226,8 @@ class QueryState {
         queryResults = results
         queryColumnNames = columnNames?.isEmpty == false ? columnNames : nil
         showQueryResults = true
+        let resultIds = Set(results.map(\.id))
+        selectedRowIDs = selectedRowIDs.intersection(resultIds)
     }
 
     /// Clear query results and reset state for a new query
@@ -232,6 +236,7 @@ class QueryState {
         queryResults = []
         queryColumnNames = nil
         selectedRowIDs = []
+        isResultsReadOnlyDueToContextMismatch = false
     }
 
     /// Reset query state
@@ -251,6 +256,7 @@ class QueryState {
         lastQueryText = nil
         queryExecutionTime = nil
         selectedRowIDs = []
+        isResultsReadOnlyDueToContextMismatch = false
         currentPage = 0
         hasNextPage = false
         currentSavedQueryId = nil
