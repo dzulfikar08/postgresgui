@@ -110,11 +110,15 @@ class AppState {
             isPaginated = true
         }
 
+        // Determine preferred column order (table order) for display
+        let preferredColumnOrder = await preferredColumnOrder(for: table)
+
         // Execute query
         let result = await queryService.executeTableQuery(
             for: table,
             limit: effectiveLimit,
-            offset: isPaginated ? calculateOffset(page: query.currentPage, pageSize: query.rowsPerPage) : 0
+            offset: isPaginated ? calculateOffset(page: query.currentPage, pageSize: query.rowsPerPage) : 0,
+            preferredColumnOrder: preferredColumnOrder
         )
 
         guard requestId == tableQueryRequestId else {
@@ -176,6 +180,84 @@ class AppState {
             connectionState: connection,
             databaseService: connection.databaseService
         )
+    }
+
+    /// Resolve column order for a table using cached or freshly fetched metadata
+    @MainActor
+    func preferredColumnOrder(for table: TableInfo) async -> [String]? {
+        if let cachedColumns = connection.getColumnInfo(for: table),
+           !cachedColumns.isEmpty {
+            return cachedColumns.map { $0.name }
+        }
+
+        do {
+            let columns = try await connection.databaseService.fetchColumnInfo(
+                schema: table.schema,
+                table: table.name
+            )
+
+            guard connection.isTableStillSelected(table.id) else {
+                return nil
+            }
+
+            let existingCache = connection.tableMetadataCache[table.id]
+            connection.tableMetadataCache[table.id] = (
+                primaryKeys: existingCache?.primaryKeys,
+                columns: columns
+            )
+
+            return columns.map { $0.name }
+        } catch {
+            DebugLog.print("⚠️ [AppState] Failed to fetch column order for \(table.name): \(error)")
+            return nil
+        }
+    }
+
+    /// Resolve column order based on a table name and current selection
+    func preferredColumnOrder(forTableName tableName: String?) async -> [String]? {
+        guard let tableName else {
+            DebugLog.print("🧭 [AppState] preferredColumnOrder: missing tableName")
+            return nil
+        }
+
+        if let selectedTable = connection.selectedTable,
+           selectedTable.name.caseInsensitiveCompare(tableName) == .orderedSame {
+            DebugLog.print("🧭 [AppState] preferredColumnOrder: using selected table \(selectedTable.name)")
+            return await preferredColumnOrder(for: selectedTable)
+        }
+
+        let matchesByName = connection.tables.filter {
+            $0.name.caseInsensitiveCompare(tableName) == .orderedSame
+        }
+
+        if matchesByName.isEmpty {
+            DebugLog.print("🧭 [AppState] preferredColumnOrder: no table match for \(tableName)")
+            return nil
+        }
+
+        let scopedMatches: [TableInfo]
+        if let selectedSchema = connection.selectedSchema {
+            scopedMatches = matchesByName.filter { $0.schema == selectedSchema }
+        } else {
+            scopedMatches = matchesByName
+        }
+
+        let resolvedTable: TableInfo?
+        if scopedMatches.count == 1 {
+            resolvedTable = scopedMatches[0]
+        } else if let publicMatch = scopedMatches.first(where: { $0.schema == "public" }) {
+            resolvedTable = publicMatch
+        } else {
+            resolvedTable = scopedMatches.first
+        }
+
+        guard let table = resolvedTable else {
+            DebugLog.print("🧭 [AppState] preferredColumnOrder: could not resolve table for \(tableName)")
+            return nil
+        }
+
+        DebugLog.print("🧭 [AppState] preferredColumnOrder: using resolved table \(table.schema).\(table.name)")
+        return await preferredColumnOrder(for: table)
     }
 
     // MARK: - Schema Context

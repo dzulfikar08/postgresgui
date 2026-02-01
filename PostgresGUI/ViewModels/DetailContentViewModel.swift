@@ -419,7 +419,12 @@ class DetailContentViewModel {
         appState.query.clearQueryResults()
 
         // Execute query
-        let result = await queryService.executeQuery(appState.query.queryText)
+        let tableName = QueryTypeDetector.extractTableName(appState.query.queryText)
+        let preferredColumnOrder = await appState.preferredColumnOrder(forTableName: tableName)
+        let result = await queryService.executeQuery(
+            appState.query.queryText,
+            preferredColumnOrder: preferredColumnOrder
+        )
 
         // Update state based on result
         if result.isSuccess {

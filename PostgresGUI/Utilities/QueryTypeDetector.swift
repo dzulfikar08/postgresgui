@@ -101,6 +101,16 @@ struct QueryTypeDetector {
         // Quoted can contain spaces, unquoted cannot
         let tableNamePattern = "(?:\"[^\"]+\"|[\\w\\.]+)"
 
+        // SELECT ... FROM table_name
+        if let match = trimmed.range(of: "\\bFROM\\s+(\(tableNamePattern))", options: [.regularExpression, .caseInsensitive]) {
+            let matched = String(trimmed[match])
+            if let tableMatch = matched.range(of: "FROM\\s+(\(tableNamePattern))", options: [.regularExpression, .caseInsensitive]) {
+                var tablePart = String(matched[tableMatch]).replacingOccurrences(of: "FROM", with: "", options: .caseInsensitive)
+                tablePart = tablePart.trimmingCharacters(in: .whitespaces)
+                return cleanTableName(tablePart)
+            }
+        }
+
         // INSERT INTO table_name
         if let match = trimmed.range(of: "INSERT\\s+INTO\\s+(\(tableNamePattern))", options: [.regularExpression, .caseInsensitive]) {
             let afterInsertInto = trimmed[match]

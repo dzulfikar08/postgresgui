@@ -107,7 +107,13 @@ class QueryEditorViewModel {
         appState.query.executingSavedQueryId = executingSavedQueryId
 
         // Execute query using QueryService
-        let result = await queryService.executeQuery(queryText)
+        DebugLog.print("🧭 [QueryEditorViewModel] Run Query tableName: \(tableName ?? "nil")")
+        let preferredColumnOrder = await appState.preferredColumnOrder(forTableName: tableName)
+        DebugLog.print("🧭 [QueryEditorViewModel] Preferred column order count: \(preferredColumnOrder?.count ?? 0)")
+        let result = await queryService.executeQuery(
+            queryText,
+            preferredColumnOrder: preferredColumnOrder
+        )
 
         // Finish execution tracking on the tab
         executingTab.finishQueryExecution()
