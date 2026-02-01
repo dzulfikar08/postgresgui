@@ -8,7 +8,7 @@
 import Foundation
 
 /// SSL mode options for PostgreSQL connections
-enum SSLMode: String, Sendable {
+enum SSLMode: String, Sendable, CaseIterable {
     case disable = "disable"
     case allow = "allow"
     case prefer = "prefer"
@@ -47,6 +47,23 @@ enum SSLMode: String, Sendable {
         case .verifyFull:
             // Require TLS and verify full certificate chain including hostname
             return .verifyFull
+        }
+    }
+
+    nonisolated var displayName: String {
+        switch self {
+        case .disable:
+            return "Disable"
+        case .allow:
+            return "Allow"
+        case .prefer:
+            return "Prefer"
+        case .require:
+            return "Require"
+        case .verifyCA:
+            return "Verify CA"
+        case .verifyFull:
+            return "Verify Full"
         }
     }
 }
