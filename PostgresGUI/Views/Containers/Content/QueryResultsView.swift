@@ -27,13 +27,7 @@ struct QueryResultsView: View {
         if let columnNames = appState.query.queryColumnNames, !columnNames.isEmpty {
             return columnNames
         }
-
-        // Fallback: Extract column names from the first row
-        guard let firstRow = appState.query.queryResults.first else {
-            return nil
-        }
-        // Sort column names alphabetically for consistent ordering
-        return Array(firstRow.values.keys.sorted())
+        return nil
     }
 
     var body: some View {

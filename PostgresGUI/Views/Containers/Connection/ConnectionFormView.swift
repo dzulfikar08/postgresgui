@@ -61,6 +61,7 @@ struct ConnectionFormView: View {
                     connectionToEdit: viewModel.connectionToEdit
                 )
                 viewModel.loadConnectionIfNeeded()
+                viewModel.initializeSSLModeIfNeeded()
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -149,11 +150,35 @@ struct ConnectionFormView: View {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                     )
+                    .onChange(of: viewModel.host) { _, newValue in
+                        viewModel.handleHostChange(newValue)
+                    }
             }
 
             formRow(label: "Port") {
                 TextField("5432", text: $viewModel.port)
                     .textFieldStyle(.roundedBorder)
+            }
+
+            formRow(label: "SSL Mode") {
+                HStack(spacing: 8) {
+                    Picker("", selection: Binding(
+                        get: { viewModel.sslModeSelection },
+                        set: { viewModel.setSSLModeSelection($0) }
+                    )) {
+                        ForEach(SSLMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName)
+                                .tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+
+                    HoverTooltipIcon(
+                        systemName: "info.circle",
+                        helpText: "Some servers do not support SSL/TLS. Use Disable only on trusted networks."
+                    )
+                }
             }
 
             formRow(label: "Database") {
@@ -239,9 +264,6 @@ struct ConnectionFormView: View {
                         )
                         .disabled(viewModel.isEditing)
                         .foregroundColor(viewModel.isEditing ? .secondary : .primary)
-                        .onChange(of: viewModel.connectionString) { _, _ in
-                            viewModel.validateConnectionString()
-                        }
 
                     if viewModel.isEditing {
                         HStack(spacing: 6) {
@@ -269,13 +291,43 @@ struct ConnectionFormView: View {
                         }
                     }
 
-                    ForEach(viewModel.connectionStringWarnings, id: \.self) { warning in
-                        Label(warning, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                            .font(.caption)
-                    }
                 }
             }
+        }
+    }
+
+    // MARK: - Tooltip
+
+    private struct HoverTooltipIcon: View {
+        let systemName: String
+        let helpText: String
+
+        @State private var isHovered: Bool = false
+
+        var body: some View {
+            Image(systemName: systemName)
+                .foregroundColor(.secondary)
+                .contentShape(Rectangle())
+                .onHover { isHovered = $0 }
+                .help("")
+                .popover(
+                    isPresented: Binding(
+                        get: { isHovered },
+                        set: { newValue in
+                            if !newValue {
+                                isHovered = false
+                            }
+                        }
+                    ),
+                    arrowEdge: .bottom
+                ) {
+                    Text(helpText)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 280, alignment: .center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(8)
+                }
         }
     }
 

@@ -13,7 +13,7 @@ protocol QueryServiceProtocol {
     /// Execute a SQL query
     /// - Parameter sql: The SQL query to execute
     /// - Returns: QueryResult with rows, columns, and timing
-    func executeQuery(_ sql: String) async -> QueryResult
+    func executeQuery(_ sql: String, preferredColumnOrder: [String]?) async -> QueryResult
 
     /// Execute a table query with pagination
     /// - Parameters:
@@ -24,7 +24,8 @@ protocol QueryServiceProtocol {
     func executeTableQuery(
         for table: TableInfo,
         limit: Int,
-        offset: Int
+        offset: Int,
+        preferredColumnOrder: [String]?
     ) async -> QueryResult
 
     /// Cancel the currently running query

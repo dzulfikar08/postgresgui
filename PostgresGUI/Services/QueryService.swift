@@ -22,7 +22,7 @@ class QueryService: QueryServiceProtocol {
     }
 
     /// Execute a SQL query with timeout
-    func executeQuery(_ sql: String) async -> QueryResult {
+    func executeQuery(_ sql: String, preferredColumnOrder: [String]? = nil) async -> QueryResult {
         let startTime = clock.now()
 
         do {
@@ -30,7 +30,11 @@ class QueryService: QueryServiceProtocol {
                 try await self.databaseService.executeDisplayQuery(sql)
             }
             let (normalizedRows, normalizedColumnNames) = QueryResultNormalizer
-                .normalizeDisplayRows(rows: rows, columnNames: columnNames)
+                .normalizeDisplayRows(
+                    rows: rows,
+                    columnNames: columnNames,
+                    preferredColumnOrder: preferredColumnOrder
+                )
             let endTime = clock.now()
             let executionTime = endTime.timeIntervalSince(startTime)
 
@@ -50,7 +54,8 @@ class QueryService: QueryServiceProtocol {
     func executeTableQuery(
         for table: TableInfo,
         limit: Int = 100,
-        offset: Int = 0
+        offset: Int = 0,
+        preferredColumnOrder: [String]? = nil
     ) async -> QueryResult {
         // Cancel any existing query task
         queryState.currentQueryTask?.cancel()
@@ -78,7 +83,11 @@ class QueryService: QueryServiceProtocol {
                     try await self.databaseService.executeDisplayQuery(query)
                 }
                 let (normalizedRows, normalizedColumnNames) = QueryResultNormalizer
-                    .normalizeDisplayRows(rows: rows, columnNames: columnNames)
+                    .normalizeDisplayRows(
+                        rows: rows,
+                        columnNames: columnNames,
+                        preferredColumnOrder: preferredColumnOrder
+                    )
 
                 // Check if task was cancelled or a newer query has started
                 guard !Task.isCancelled, thisQueryID == queryState.queryCounter else {

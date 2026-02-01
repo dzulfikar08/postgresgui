@@ -41,9 +41,13 @@ class ConnectionFormViewModel {
 
     var connectionString: String = ""
     var connectionStringName: String = ""
-    var connectionStringWarnings: [String] = []
     var showConnectionStringNameField: Bool = false
     var copyButtonLabel: String = "Copy"
+
+    // MARK: - SSL Mode State
+
+    var sslModeSelection: SSLMode = .default
+    private var isSSLModeUserSelected: Bool = false
 
     // MARK: - Input Mode
 
@@ -130,13 +134,13 @@ class ConnectionFormViewModel {
         if inputMode == .connectionString {
             connectionString = generateConnectionString()
         }
+
     }
 
     // MARK: - Input Mode Handling
 
     func handleInputModeChange(to newMode: ConnectionInputMode) {
         connectionTestStatus = .idle
-        connectionStringWarnings.removeAll()
 
         // If switching to connection string mode in edit mode, populate the connection string
         if newMode == .connectionString, isEditing {
@@ -144,6 +148,10 @@ class ConnectionFormViewModel {
         }
 
         inputMode = newMode
+
+        if newMode == .individual {
+            updateSSLModeForHostIfNeeded(host)
+        }
     }
 
     // MARK: - Password Handling
@@ -188,23 +196,6 @@ class ConnectionFormViewModel {
 
     // MARK: - Connection String Handling
 
-    func validateConnectionString() {
-        connectionStringWarnings.removeAll()
-
-        guard !connectionString.isEmpty else { return }
-
-        do {
-            let parsed = try ConnectionStringParser.parse(connectionString)
-
-            if !parsed.unsupportedParameters.isEmpty {
-                let params = parsed.unsupportedParameters.joined(separator: ", ")
-                connectionStringWarnings.append("Unsupported parameters will be ignored: \(params)")
-            }
-        } catch {
-            connectionTestStatus = .error(message: error.localizedDescription)
-        }
-    }
-
     func generateConnectionString() -> String {
         guard let connection = connectionToEdit else { return "" }
 
@@ -236,7 +227,6 @@ class ConnectionFormViewModel {
 
     func testConnection() async {
         isConnecting = true
-        connectionStringWarnings.removeAll()
 
         let testStartTime = Date()
         connectionTestStatus = .testing
@@ -299,7 +289,6 @@ class ConnectionFormViewModel {
 
     func saveConnection(modelContext: ModelContext) async -> Bool {
         isConnecting = true
-        connectionStringWarnings.removeAll()
 
         do {
             let details = try parseConnectionDetails()
@@ -461,11 +450,6 @@ class ConnectionFormViewModel {
     private func parseConnectionString() throws -> ConnectionDetails {
         let parsed = try ConnectionStringParser.parse(connectionString)
 
-        if !parsed.unsupportedParameters.isEmpty {
-            let params = parsed.unsupportedParameters.joined(separator: ", ")
-            connectionStringWarnings.append("Unsupported parameters will be ignored: \(params)")
-        }
-
         var parsedPassword = parsed.password ?? ""
 
         // Replace YOUR_PASSWORD placeholder with keychain password
@@ -506,21 +490,41 @@ class ConnectionFormViewModel {
             passwordToUse = password
         }
 
-        let sslMode: SSLMode
-        if let connection = connectionToEdit {
-            sslMode = connection.sslModeEnum
-        } else {
-            sslMode = SSLMode.defaultFor(host: trimmedHost)
-        }
-
         return ConnectionDetails(
             host: trimmedHost.isEmpty ? "localhost" : trimmedHost,
             port: portInt,
             username: trimmedUsername.isEmpty ? "postgres" : trimmedUsername,
             password: passwordToUse,
             database: trimmedDatabase.isEmpty ? "postgres" : trimmedDatabase,
-            sslMode: sslMode
+            sslMode: sslModeSelection
         )
+    }
+
+    // MARK: - SSL Mode Handling
+
+    func handleHostChange(_ newHost: String) {
+        updateSSLModeForHostIfNeeded(newHost)
+    }
+
+    func setSSLModeSelection(_ newMode: SSLMode) {
+        sslModeSelection = newMode
+        isSSLModeUserSelected = true
+    }
+
+    func initializeSSLModeIfNeeded() {
+        if let connection = connectionToEdit {
+            sslModeSelection = connection.sslModeEnum
+            isSSLModeUserSelected = true
+        } else {
+            sslModeSelection = SSLMode.defaultFor(host: host)
+            isSSLModeUserSelected = false
+        }
+    }
+
+    private func updateSSLModeForHostIfNeeded(_ newHost: String) {
+        guard !isSSLModeUserSelected else { return }
+        let trimmedHost = newHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        sslModeSelection = SSLMode.defaultFor(host: trimmedHost)
     }
 }
 
