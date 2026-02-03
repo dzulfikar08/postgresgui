@@ -5,10 +5,6 @@
 [![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)](https://postgresgui.com)
   [![Platform](https://img.shields.io/badge/platform-macOS%2026-lightgrey.svg)](https://www.apple.com/macos)
 
-## NOTE 01/30/2026
-
-A fix is being pushed to the App Store to address the inconsistent data display issue reported here: https://github.com/PostgresGUI/postgresgui/issues/20. There are also improvements and features such as the table schema dropdown and saved query caching by [NeodymiumPhish](https://github.com/NeodymiumPhish). — Ghazi
-
 ## Getting started
 
 1. Clone the repository:
