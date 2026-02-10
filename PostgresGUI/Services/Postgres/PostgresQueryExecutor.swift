@@ -372,11 +372,12 @@ struct PostgresQueryExecutor: QueryExecutorProtocol {
         schema: String,
         table: String
     ) async throws -> [String] {
+        let qualifiedTable = "\(sanitizeIdentifier(schema)).\(sanitizeIdentifier(table))"
         let sql = """
         SELECT a.attname
         FROM pg_index i
         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-        WHERE i.indrelid = ('\(schema).\(table)')::regclass AND i.indisprimary
+        WHERE i.indrelid = ('\(qualifiedTable)')::regclass AND i.indisprimary
         """
 
         logger.debug("Fetching primary keys for \(schema).\(table)")
