@@ -2,12 +2,8 @@
 
 ![PostgresGUI screenshot in dark mode](https://github.com/PostgresGUI/website/blob/main/public/screenshots2/PostgresGUI%20-%20Dark%20mode.png?raw=true)
 
-[![Version](https://img.shields.io/badge/version-1.0.9-blue.svg)](https://postgresgui.com)
+[![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)](https://postgresgui.com)
   [![Platform](https://img.shields.io/badge/platform-macOS%2026-lightgrey.svg)](https://www.apple.com/macos)
-
-## NOTE 01/30/2026
-
-A fix is being pushed to the App Store to address the inconsistent data display issue reported here: https://github.com/PostgresGUI/postgresgui/issues/20. There are also improvements and features such as the table schema dropdown and saved query caching by [NeodymiumPhish](https://github.com/NeodymiumPhish). — Ghazi
 
 ## Getting started
 
