@@ -22,6 +22,14 @@ final class DelayedMockDatabaseService: DatabaseServiceProtocol {
     /// Results to return from executeQuery
     var queryResults: ([TableRow], [String]) = ([], [])
 
+    /// Optional custom query handler for table-specific delay/result behavior in tests
+    var queryHandler: ((String) async throws -> ([TableRow], [String]))?
+
+    private(set) var executeQueryCallCount: Int = 0
+    private(set) var executeDisplayQueryCallCount: Int = 0
+    private(set) var lastExecuteQuerySQL: String?
+    private(set) var lastExecuteDisplayQuerySQL: String?
+
     func connect(host: String, port: Int, username: String, password: String, database: String, sslMode: SSLMode) async throws {
         isConnected = true
         connectedDatabase = database
@@ -47,33 +55,84 @@ final class DelayedMockDatabaseService: DatabaseServiceProtocol {
     func generateDDL(schema: String, table: String) async throws -> String { "" }
     func fetchAllTableData(schema: String, table: String) async throws -> ([TableRow], [String]) { ([], []) }
 
-    func executeQuery(_ sql: String) async throws -> ([TableRow], [String]) {
+    private func performQuery(_ sql: String) async throws -> ([TableRow], [String]) {
+        if let queryHandler {
+            return try await queryHandler(sql)
+        }
         if queryDelay > 0 {
             try? await Task.sleep(nanoseconds: UInt64(queryDelay * 1_000_000_000))
         }
         return queryResults
     }
 
+    func executeQuery(_ sql: String) async throws -> ([TableRow], [String]) {
+        executeQueryCallCount += 1
+        lastExecuteQuerySQL = sql
+        return try await performQuery(sql)
+    }
+
     func executeDisplayQuery(_ sql: String) async throws -> ([TableRow], [String]) {
-        try await executeQuery(sql)
+        executeDisplayQueryCallCount += 1
+        lastExecuteDisplayQuerySQL = sql
+        return try await performQuery(sql)
     }
 
     func deleteRows(schema: String, table: String, primaryKeyColumns: [String], rows: [TableRow]) async throws {}
-    func updateRow(schema: String, table: String, primaryKeyColumns: [String], originalRow: TableRow, updatedValues: [String: String?]) async throws {}
+    func updateRow(schema: String, table: String, primaryKeyColumns: [String], originalRow: TableRow, updatedValues: [String: RowEditValue]) async throws {}
     func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { [] }
     func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { [] }
+}
+
+@MainActor
+final class DelayedMockTableMetadataService: TableMetadataServiceProtocol {
+    var delayNanoseconds: UInt64 = 0
+    private(set) var callCount: Int = 0
+    private(set) var cancellationCount: Int = 0
+    private(set) var requestedTableIds: [String] = []
+
+    func fetchAndCacheMetadata(
+        for table: TableInfo,
+        connectionState: ConnectionState,
+        databaseService: DatabaseServiceProtocol
+    ) async -> (primaryKeys: [String]?, columnInfo: [ColumnInfo]?)? {
+        callCount += 1
+        requestedTableIds.append(table.id)
+
+        if delayNanoseconds > 0 {
+            do {
+                try await Task.sleep(nanoseconds: delayNanoseconds)
+            } catch {
+                cancellationCount += 1
+                return nil
+            }
+        }
+
+        if Task.isCancelled {
+            cancellationCount += 1
+        }
+        return nil
+    }
+
+    func updateSelectedTableMetadata(
+        connectionState: ConnectionState,
+        primaryKeys: [String]?,
+        columnInfo: [ColumnInfo]?
+    ) {}
 }
 
 // MARK: - Test Helpers
 
 @MainActor
-private func createTestContext() -> (DelayedMockDatabaseService, ConnectionState, QueryState, AppState) {
+private func createTestContext(
+    tableMetadataService: TableMetadataServiceProtocol? = nil
+) -> (DelayedMockDatabaseService, ConnectionState, QueryState, AppState) {
     let mockService = DelayedMockDatabaseService()
     let connectionState = ConnectionState(databaseService: mockService)
     let queryState = QueryState()
     let appState = AppState(
         connection: connectionState,
-        query: queryState
+        query: queryState,
+        tableMetadataService: tableMetadataService
     )
     return (mockService, connectionState, queryState, appState)
 }
@@ -285,6 +344,175 @@ struct AppStateTests {
 
             // Results should NOT be applied - different connection ID
             #expect(queryState.queryResults.isEmpty, "Results from Server A should not appear on Server B")
+        }
+
+        @Test func requestTableQuery_setsTableLoadingImmediately() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+            mockService.queryResults = ([TableRow(values: ["id": "1"])], ["id"])
+            mockService.queryDelay = 0.1
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+
+            let table = TableInfo(name: "users", schema: "public")
+            appState.requestTableQuery(for: table)
+
+            #expect(queryState.isExecutingTableQuery == true)
+            #expect(queryState.executingTableQueryTableId == table.id)
+        }
+
+        @Test func rapidTableClicks_latestWins() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+
+            let slowTable = TableInfo(name: "slow_table", schema: "public")
+            let fastTable = TableInfo(name: "fast_table", schema: "public")
+
+            mockService.queryHandler = { sql in
+                if sql.contains("\"public\".\"slow_table\"") {
+                    try? await Task.sleep(nanoseconds: 120_000_000)
+                    return ([TableRow(values: ["source": "slow"])], ["source"])
+                }
+                if sql.contains("\"public\".\"fast_table\"") {
+                    return ([TableRow(values: ["source": "fast"])], ["source"])
+                }
+                return ([], [])
+            }
+
+            appState.requestTableQuery(for: slowTable)
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            appState.requestTableQuery(for: fastTable)
+
+            try? await Task.sleep(nanoseconds: 220_000_000)
+
+            #expect(connectionState.selectedTable?.id == fastTable.id)
+            #expect(queryState.queryResults.count == 1)
+            #expect((queryState.queryResults.first?.values["source"] ?? nil) == "fast")
+            #expect(queryState.cachedResultsTableId == fastTable.id)
+            #expect(queryState.isExecutingTableQuery == false)
+            #expect(queryState.executingTableQueryTableId == nil)
+        }
+
+        @Test func supersededRequest_doesNotClearLatestLoading() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+
+            let firstTable = TableInfo(name: "first_table", schema: "public")
+            let latestTable = TableInfo(name: "latest_table", schema: "public")
+
+            mockService.queryHandler = { sql in
+                if sql.contains("\"public\".\"first_table\"") {
+                    try? await Task.sleep(nanoseconds: 80_000_000)
+                    return ([TableRow(values: ["source": "first"])], ["source"])
+                }
+                if sql.contains("\"public\".\"latest_table\"") {
+                    try? await Task.sleep(nanoseconds: 180_000_000)
+                    return ([TableRow(values: ["source": "latest"])], ["source"])
+                }
+                return ([], [])
+            }
+
+            appState.requestTableQuery(for: firstTable)
+            try? await Task.sleep(nanoseconds: 20_000_000)
+            appState.requestTableQuery(for: latestTable)
+
+            try? await Task.sleep(nanoseconds: 90_000_000)
+            #expect(queryState.isExecutingTableQuery == true)
+            #expect(queryState.executingTableQueryTableId == latestTable.id)
+
+            try? await Task.sleep(nanoseconds: 160_000_000)
+            #expect(queryState.isExecutingTableQuery == false)
+            #expect(queryState.executingTableQueryTableId == nil)
+            #expect((queryState.queryResults.first?.values["source"] ?? nil) == "latest")
+        }
+
+        @Test func tableQuery_usesDisplayExecutionAndPreservesWrappedJsonExpansion() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+
+            let table = TableInfo(name: "users", schema: "public")
+            connectionState.selectedTable = table
+
+            mockService.queryHandler = { _ in
+                (
+                    [TableRow(values: ["row": #"{"id":1,"name":"Alice"}"#])],
+                    ["row"]
+                )
+            }
+
+            await appState.executeTableQuery(for: table, limit: 1)
+
+            #expect(mockService.executeDisplayQueryCallCount == 1)
+            #expect(mockService.executeQueryCallCount == 0)
+            #expect(Set(queryState.queryColumnNames ?? []) == Set(["id", "name"]))
+            #expect((queryState.queryResults.first?.values["id"] ?? nil) == "1")
+            #expect((queryState.queryResults.first?.values["name"] ?? nil) == "Alice")
+        }
+
+        @Test func delayedMetadataFetch_doesNotKeepTableLoadingTrue() async {
+            let metadataService = DelayedMockTableMetadataService()
+            metadataService.delayNanoseconds = 200_000_000
+            let (mockService, connectionState, queryState, appState) = createTestContext(
+                tableMetadataService: metadataService
+            )
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+            let table = TableInfo(name: "users", schema: "public")
+            connectionState.selectedTable = table
+
+            mockService.queryResults = ([TableRow(values: ["id": "1"])], ["id"])
+
+            await appState.executeTableQuery(for: table)
+
+            #expect(queryState.isExecutingTableQuery == false)
+            #expect(queryState.executingTableQueryTableId == nil)
+            #expect(queryState.queryResults.count == 1)
+
+            try? await Task.sleep(nanoseconds: 20_000_000)
+            #expect(metadataService.callCount >= 1)
+        }
+
+        @Test func rapidTableSwitching_cancelsPreviousMetadataTask_latestWins() async {
+            let metadataService = DelayedMockTableMetadataService()
+            metadataService.delayNanoseconds = 250_000_000
+            let (mockService, connectionState, queryState, appState) = createTestContext(
+                tableMetadataService: metadataService
+            )
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+
+            let firstTable = TableInfo(name: "first_table", schema: "public")
+            let latestTable = TableInfo(name: "latest_table", schema: "public")
+
+            mockService.queryHandler = { sql in
+                if sql.contains("\"public\".\"first_table\"") {
+                    return ([TableRow(values: ["source": "first"])], ["source"])
+                }
+                if sql.contains("\"public\".\"latest_table\"") {
+                    return ([TableRow(values: ["source": "latest"])], ["source"])
+                }
+                return ([], [])
+            }
+
+            appState.requestTableQuery(for: firstTable)
+            try? await Task.sleep(nanoseconds: 40_000_000)
+            appState.requestTableQuery(for: latestTable)
+
+            try? await Task.sleep(nanoseconds: 360_000_000)
+
+            #expect((queryState.queryResults.first?.values["source"] ?? nil) == "latest")
+            #expect(metadataService.callCount >= 2)
+            #expect(metadataService.cancellationCount >= 1)
+            #expect(metadataService.requestedTableIds.contains(firstTable.id))
+            #expect(metadataService.requestedTableIds.contains(latestTable.id))
         }
     }
 }

@@ -28,7 +28,9 @@ class AppState {
 
     private var schemaSearchPathTask: Task<Void, Never>?
     private var tableQueryTask: Task<Void, Never>?
+    private var tableMetadataTask: Task<Void, Never>?
     private var tableQueryRequestId: Int = 0
+    private let tableQueryDispatchDebounceNanoseconds: UInt64 = 60_000_000
 
     // MARK: - Initialization
 
@@ -56,12 +58,16 @@ class AppState {
     @MainActor
     func requestTableQuery(for table: TableInfo, limit: Int? = nil) {
         tableQueryTask?.cancel()
+        tableMetadataTask?.cancel()
+        query.cancelCurrentQuerySilentlyForSupersession()
         tableQueryRequestId += 1
         let requestId = tableQueryRequestId
+        startTableQueryLoading(for: table)
+        connection.selectedTable = table
 
         tableQueryTask = Task { @MainActor in
-            guard !Task.isCancelled else { return }
-            connection.selectedTable = table
+            try? await Task.sleep(nanoseconds: tableQueryDispatchDebounceNanoseconds)
+            guard isTableQueryRequestCurrent(requestId: requestId) else { return }
             await executeTableQueryInternal(for: table, limit: limit, requestId: requestId)
         }
     }
@@ -74,13 +80,24 @@ class AppState {
     func executeTableQuery(for table: TableInfo, limit: Int? = nil) async {
         tableQueryTask?.cancel()
         tableQueryTask = nil
+        tableMetadataTask?.cancel()
+        query.cancelCurrentQuerySilentlyForSupersession()
         tableQueryRequestId += 1
         let requestId = tableQueryRequestId
+        startTableQueryLoading(for: table)
         await executeTableQueryInternal(for: table, limit: limit, requestId: requestId)
     }
 
     @MainActor
     private func executeTableQueryInternal(for table: TableInfo, limit: Int?, requestId: Int) async {
+        defer {
+            finishTableQueryLoadingIfCurrent(requestId: requestId)
+        }
+
+        guard isTableQueryRequestCurrent(requestId: requestId) else {
+            return
+        }
+
         // Capture context to verify nothing changed after async operations
         // This prevents stale query results when user switches table, database, or connection
         let tableId = table.id
@@ -91,6 +108,10 @@ class AppState {
             databaseService: connection.databaseService,
             queryState: query
         )
+
+        guard isTableQueryRequestCurrent(requestId: requestId) else {
+            return
+        }
 
         // Set loading state
         query.startQueryExecution()
@@ -110,8 +131,13 @@ class AppState {
             isPaginated = true
         }
 
-        // Determine preferred column order (table order) for display
-        let preferredColumnOrder = await preferredColumnOrder(for: table)
+        // Determine preferred column order (table order) from cache only.
+        // Avoiding an extra metadata round-trip here keeps rapid table switching responsive.
+        let preferredColumnOrder = cachedPreferredColumnOrder(for: table)
+
+        guard isTableQueryRequestCurrent(requestId: requestId) else {
+            return
+        }
 
         // Execute query
         let result = await queryService.executeTableQuery(
@@ -120,6 +146,11 @@ class AppState {
             offset: isPaginated ? calculateOffset(page: query.currentPage, pageSize: query.rowsPerPage) : 0,
             preferredColumnOrder: preferredColumnOrder
         )
+
+        guard isTableQueryRequestCurrent(requestId: requestId) else {
+            DebugLog.print("⚠️ [AppState] Query for \(table.name) superseded/cancelled, skipping state update")
+            return
+        }
 
         guard requestId == tableQueryRequestId else {
             DebugLog.print("⚠️ [AppState] Query for \(table.name) superseded (newer request), skipping state update")
@@ -166,9 +197,62 @@ class AppState {
             )
 
             // Fetch table metadata (primary keys, column info) for edit/delete operations
-            await fetchTableMetadata(for: table)
+            startTableMetadataFetch(
+                for: table,
+                tableId: tableId,
+                databaseId: databaseId,
+                connectionId: connectionId
+            )
         } else {
             query.finishQueryExecution(with: result)
+        }
+    }
+
+    @MainActor
+    private func startTableQueryLoading(for table: TableInfo) {
+        query.isExecutingTableQuery = true
+        query.executingTableQueryTableId = table.id
+    }
+
+    @MainActor
+    private func finishTableQueryLoadingIfCurrent(requestId: Int) {
+        guard requestId == tableQueryRequestId else { return }
+        query.isExecutingTableQuery = false
+        query.executingTableQueryTableId = nil
+    }
+
+    @MainActor
+    private func isTableQueryRequestCurrent(requestId: Int) -> Bool {
+        requestId == tableQueryRequestId && !Task.isCancelled
+    }
+
+    @MainActor
+    private func cachedPreferredColumnOrder(for table: TableInfo) -> [String]? {
+        guard let cachedColumns = connection.getColumnInfo(for: table),
+              !cachedColumns.isEmpty else {
+            return nil
+        }
+        return cachedColumns.map { $0.name }
+    }
+
+    @MainActor
+    private func startTableMetadataFetch(
+        for table: TableInfo,
+        tableId: String,
+        databaseId: String?,
+        connectionId: UUID?
+    ) {
+        tableMetadataTask?.cancel()
+        tableMetadataTask = Task { @MainActor in
+            guard !Task.isCancelled else { return }
+            guard connection.isQueryContextValid(
+                tableId: tableId,
+                databaseId: databaseId,
+                connectionId: connectionId
+            ) else {
+                return
+            }
+            await fetchTableMetadata(for: table)
         }
     }
 
@@ -310,6 +394,7 @@ class AppState {
         // Cancel any pending queries
         query.cleanup()
         tableQueryTask?.cancel()
+        tableMetadataTask?.cancel()
 
         // Disconnect and reset connection state
         await connection.cleanupOnWindowClose()

@@ -192,6 +192,8 @@ struct QueryResultsComponent: View {
                     TableColumn(columnName, sortUsing: TableRowComparator(columnName: columnName)) { row in
                         Text(formatValue(row.values[columnName] ?? nil))
                             .font(.system(.body, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                             .textSelection(.enabled)
                     }
                     .width(min: Constants.ColumnWidth.tableColumnMin)
@@ -240,12 +242,20 @@ struct QueryResultsComponent: View {
     }
 
     private var sortedResults: [TableRow] {
-        filteredResults.sorted(using: sortOrder)
+        let filtered = filteredResults
+        guard !sortOrder.isEmpty else { return filtered }
+        return filtered.sorted(using: sortOrder)
     }
 
     private func formatValue(_ value: String?) -> String {
         guard let value = value else { return "NULL" }
+        guard Self.shouldAttemptDateParsing(value) else {
+            return value
+        }
         let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.shouldAttemptDateParsing(trimmedValue) else {
+            return value
+        }
         guard let date = parseDate(from: trimmedValue) else {
             return value
         }
@@ -311,6 +321,47 @@ struct QueryResultsComponent: View {
         formatter.unitsStyle = .full
         return formatter
     }()
+
+    static let maxDateParseLength = 64
+
+    static func shouldAttemptDateParsing(_ value: String) -> Bool {
+        guard !value.isEmpty, !isLongerThanDateParseLimit(value) else { return false }
+
+        var hasDigit = false
+        var hasDateMarker = false
+
+        for scalar in value.unicodeScalars {
+            if !hasDigit, CharacterSet.decimalDigits.contains(scalar) {
+                hasDigit = true
+            }
+
+            if !hasDateMarker {
+                switch scalar {
+                case "-", "/", ":", "T", "t":
+                    hasDateMarker = true
+                default:
+                    break
+                }
+            }
+
+            if hasDigit && hasDateMarker {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private static func isLongerThanDateParseLimit(_ value: String) -> Bool {
+        var count = 0
+        for _ in value.utf8 {
+            count += 1
+            if count > maxDateParseLength {
+                return true
+            }
+        }
+        return false
+    }
 
     private static func makeParsingFormatter(_ format: String) -> DateFormatter {
         let formatter = DateFormatter()

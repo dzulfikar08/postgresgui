@@ -268,6 +268,8 @@ class DatabaseService {
         logger.info("Executing query")
         logger.debug("SQL: \(sql.prefix(200))")
 
+        let queryExecutor = self.queryExecutor
+
         // Split SQL into individual statements to work around PostgresNIO limitation
         // (doesn't support multiple commands in a single prepared statement)
         let statements = SQLStatementSplitter.split(sql)
@@ -280,13 +282,13 @@ class DatabaseService {
 
         // Single statement - no transaction wrapper needed
         if statements.count == 1 {
+            let wrappedQuery = QueryWrapper.wrapIfNeeded(sql: statements[0], policy: wrapPolicy)
             return try await connectionManager.withConnection { conn in
-                let wrappedQuery = QueryWrapper.wrapIfNeeded(sql: statements[0], policy: wrapPolicy)
-                let (rows, columnNames) = try await self.queryExecutor.executeQuery(
+                let (rows, columnNames) = try await queryExecutor.executeQuery(
                     connection: conn,
                     sql: wrappedQuery.sql
                 )
-                return (rows, self.normalizedColumnNames(columnNames, wrappedQuery: wrappedQuery))
+                return (rows, Self.normalizedColumnNames(columnNames, wrappedQuery: wrappedQuery))
             }
         }
 
@@ -300,16 +302,16 @@ class DatabaseService {
 
             do {
                 if needsTransaction {
-                    _ = try await self.queryExecutor.executeQuery(connection: conn, sql: "BEGIN")
+                    _ = try await queryExecutor.executeQuery(connection: conn, sql: "BEGIN")
                 }
 
                 for statement in statements {
                     let wrappedQuery = QueryWrapper.wrapIfNeeded(sql: statement, policy: wrapPolicy)
-                    let (rows, columnNames) = try await self.queryExecutor.executeQuery(
+                    let (rows, columnNames) = try await queryExecutor.executeQuery(
                         connection: conn,
                         sql: wrappedQuery.sql
                     )
-                    let normalizedColumns = self.normalizedColumnNames(columnNames, wrappedQuery: wrappedQuery)
+                    let normalizedColumns = Self.normalizedColumnNames(columnNames, wrappedQuery: wrappedQuery)
 
                     if wrappedQuery.isWrapped || !rows.isEmpty {
                         lastRows = rows
@@ -318,11 +320,11 @@ class DatabaseService {
                 }
 
                 if needsTransaction {
-                    _ = try await self.queryExecutor.executeQuery(connection: conn, sql: "COMMIT")
+                    _ = try await queryExecutor.executeQuery(connection: conn, sql: "COMMIT")
                 }
             } catch {
                 if needsTransaction {
-                    _ = try? await self.queryExecutor.executeQuery(connection: conn, sql: "ROLLBACK")
+                    _ = try? await queryExecutor.executeQuery(connection: conn, sql: "ROLLBACK")
                 }
                 throw error
             }
@@ -331,7 +333,7 @@ class DatabaseService {
         }
     }
 
-    private func normalizedColumnNames(
+    private static func normalizedColumnNames(
         _ columnNames: [String],
         wrappedQuery: WrappedQuery
     ) -> [String] {

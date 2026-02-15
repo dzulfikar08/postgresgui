@@ -129,9 +129,6 @@ struct TableListRowComponent: View {
         .padding(.trailing, 6)
         .contentShape(Rectangle())
         .background(rowBackground, in: RoundedRectangle(cornerRadius: rowCornerRadius))
-        .onTapGesture {
-            onShowAllRows()
-        }
         .onHover { hovering in
             isHovered = hovering
         }

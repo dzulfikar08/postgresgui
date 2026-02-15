@@ -136,6 +136,11 @@ struct QueryStateTests {
             #expect(state.rowsPerPage == Constants.Pagination.defaultRowsPerPage)
         }
 
+        @Test func initialStateRowsPerPageIs100() {
+            let state = QueryState()
+            #expect(state.rowsPerPage == 100)
+        }
+
         @Test func initialStateHasNoNextPage() {
             let state = QueryState()
             #expect(state.hasNextPage == false)
@@ -257,6 +262,25 @@ struct QueryStateTests {
             state.cancelCurrentQuery()
             #expect(state.currentQueryTask == nil)
         }
+
+        @Test func cancelCurrentQuerySilentlyForSupersession_preservesResults() {
+            let state = QueryState()
+            state.queryResults = [TableRow(values: ["id": "1"])]
+            state.queryColumnNames = ["id"]
+            state.showQueryResults = true
+            state.statusMessage = "Existing status"
+            state.currentQueryTask = Task { }
+
+            let initialCounter = state.queryCounter
+            state.cancelCurrentQuerySilentlyForSupersession()
+
+            #expect(state.currentQueryTask == nil)
+            #expect(state.queryCounter == initialCounter + 1)
+            #expect(state.queryResults.count == 1)
+            #expect(state.queryColumnNames == ["id"])
+            #expect(state.showQueryResults == true)
+            #expect(state.statusMessage == "Existing status")
+        }
     }
 
     // MARK: - Results Version Tests
@@ -330,6 +354,17 @@ struct QueryStateTests {
             state.showQueryResults = true
             state.reset()
             #expect(state.showQueryResults == false)
+        }
+
+        @Test func resetClearsTableLoadingFlags() {
+            let state = QueryState()
+            state.isExecutingTableQuery = true
+            state.executingTableQueryTableId = "public.users"
+
+            state.reset()
+
+            #expect(state.isExecutingTableQuery == false)
+            #expect(state.executingTableQueryTableId == nil)
         }
 
         @Test func resetClearsExecutionTime() {
@@ -434,6 +469,21 @@ struct QueryStateTests {
 
             #expect(state.mutationToast == nil)
             #expect(state.toastTimer == nil)
+        }
+    }
+
+    // MARK: - Date Parse Gating Tests
+
+    @Suite("Date Parse Gating")
+    struct DateParseGatingTests {
+
+        @Test func obviousNonDateLongText_skipsParseAttempt() {
+            let longText = String(repeating: "x", count: QueryResultsComponent.maxDateParseLength + 1)
+            #expect(QueryResultsComponent.shouldAttemptDateParsing(longText) == false)
+        }
+
+        @Test func likelyDateValue_attemptsParse() {
+            #expect(QueryResultsComponent.shouldAttemptDateParsing("2026-02-15T10:30:00Z") == true)
         }
     }
 }

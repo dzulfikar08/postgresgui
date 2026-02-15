@@ -84,6 +84,10 @@ class QueryState {
     /// Used to track which query should receive the results and show loading indicator
     var executingSavedQueryId: UUID? = nil
 
+    /// Table query loading state (separate from saved query execution tracking)
+    var isExecutingTableQuery: Bool = false
+    var executingTableQueryTableId: String? = nil
+
     // Elapsed time tracking for running queries
     var queryStartTime: Date? = nil
     var displayedElapsedTime: TimeInterval = 0
@@ -155,6 +159,14 @@ class QueryState {
         // Clear results when query is cancelled
         clearQueryResults()
         setTemporaryStatus("Query cancelled")
+    }
+
+    /// Cancel only the in-flight query task/counter for supersession.
+    /// Preserves current results and status UI.
+    func cancelCurrentQuerySilentlyForSupersession() {
+        currentQueryTask?.cancel()
+        currentQueryTask = nil
+        queryCounter += 1
     }
 
     // MARK: - Elapsed Time Tracking
@@ -250,6 +262,8 @@ class QueryState {
         cachedResultsTableId = nil
         isExecutingQuery = false
         executingSavedQueryId = nil
+        isExecutingTableQuery = false
+        executingTableQueryTableId = nil
         queryError = nil
         showQueryResults = false
         showTimeoutAlert = false

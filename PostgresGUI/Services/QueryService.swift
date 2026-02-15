@@ -26,15 +26,10 @@ class QueryService: QueryServiceProtocol {
         let startTime = clock.now()
 
         do {
-            let (rows, columnNames) = try await withDatabaseTimeout {
-                try await self.databaseService.executeDisplayQuery(sql)
-            }
-            let (normalizedRows, normalizedColumnNames) = QueryResultNormalizer
-                .normalizeDisplayRows(
-                    rows: rows,
-                    columnNames: columnNames,
-                    preferredColumnOrder: preferredColumnOrder
-                )
+            let (normalizedRows, normalizedColumnNames) = try await fetchAndNormalizeDisplayRows(
+                sql: sql,
+                preferredColumnOrder: preferredColumnOrder
+            )
             let endTime = clock.now()
             let executionTime = endTime.timeIntervalSince(startTime)
 
@@ -57,6 +52,13 @@ class QueryService: QueryServiceProtocol {
         offset: Int = 0,
         preferredColumnOrder: [String]? = nil
     ) async -> QueryResult {
+        if Task.isCancelled {
+            return .failure(
+                error: CancellationError(),
+                executionTime: 0
+            )
+        }
+
         // Cancel any existing query task
         queryState.currentQueryTask?.cancel()
         queryState.currentQueryTask = nil
@@ -78,16 +80,13 @@ class QueryService: QueryServiceProtocol {
         // Create and store the task
         queryState.currentQueryTask = Task { @MainActor in
             do {
+                guard !Task.isCancelled else { return }
                 DebugLog.print("📊 [QueryService] Executing query... (ID: \(thisQueryID))")
-                let (rows, columnNames) = try await withDatabaseTimeout {
-                    try await self.databaseService.executeDisplayQuery(query)
-                }
-                let (normalizedRows, normalizedColumnNames) = QueryResultNormalizer
-                    .normalizeDisplayRows(
-                        rows: rows,
-                        columnNames: columnNames,
-                        preferredColumnOrder: preferredColumnOrder
-                    )
+                let (normalizedRows, normalizedColumnNames) = try await fetchAndNormalizeDisplayRows(
+                    sql: query,
+                    preferredColumnOrder: preferredColumnOrder,
+                    queryId: thisQueryID
+                )
 
                 // Check if task was cancelled or a newer query has started
                 guard !Task.isCancelled, thisQueryID == queryState.queryCounter else {
@@ -104,7 +103,7 @@ class QueryService: QueryServiceProtocol {
                     executionTime: executionTime
                 )
 
-                DebugLog.print("✅ [QueryService] Query executed successfully - \(rows.count) rows (ID: \(thisQueryID))")
+                DebugLog.print("✅ [QueryService] Query executed successfully - \(normalizedRows.count) rows (ID: \(thisQueryID))")
             } catch {
                 // Check if task was cancelled or a newer query has started
                 guard !Task.isCancelled, thisQueryID == queryState.queryCounter else {
@@ -139,5 +138,41 @@ class QueryService: QueryServiceProtocol {
     /// Cancel the currently running query
     func cancelCurrentQuery() {
         queryState.cancelCurrentQuery()
+    }
+
+    private func fetchAndNormalizeDisplayRows(
+        sql: String,
+        preferredColumnOrder: [String]? = nil,
+        queryId: Int? = nil
+    ) async throws -> ([TableRow], [String]) {
+        try Task.checkCancellation()
+
+        let dbFetchStart = clock.now()
+        let (rows, columnNames) = try await withDatabaseTimeout {
+            try await self.databaseService.executeDisplayQuery(sql)
+        }
+        let dbFetchDuration = clock.now().timeIntervalSince(dbFetchStart)
+
+        try Task.checkCancellation()
+
+        let normalizationStart = clock.now()
+        let (normalizedRows, normalizedColumnNames) = await QueryResultNormalizer
+            .normalizeDisplayRowsOffMain(
+                rows: rows,
+                columnNames: columnNames,
+                preferredColumnOrder: preferredColumnOrder
+            )
+        let normalizationDuration = clock.now().timeIntervalSince(normalizationStart)
+
+        try Task.checkCancellation()
+
+        let queryIdSuffix = queryId.map { " (ID: \($0))" } ?? ""
+        DebugLog.print(
+            "⏱️ [QueryService] DB fetch \(String(format: "%.3f", dbFetchDuration))s, " +
+            "normalize \(String(format: "%.3f", normalizationDuration))s, " +
+            "rows \(rows.count)→\(normalizedRows.count), cols \(columnNames.count)→\(normalizedColumnNames.count)\(queryIdSuffix)"
+        )
+
+        return (normalizedRows, normalizedColumnNames)
     }
 }

@@ -74,7 +74,7 @@ final class MockDatabaseService: DatabaseServiceProtocol {
     func deleteRows(schema: String, table: String, primaryKeyColumns: [String], rows: [TableRow]) async throws {
     }
 
-    func updateRow(schema: String, table: String, primaryKeyColumns: [String], originalRow: TableRow, updatedValues: [String: String?]) async throws {
+    func updateRow(schema: String, table: String, primaryKeyColumns: [String], originalRow: TableRow, updatedValues: [String: RowEditValue]) async throws {
     }
 
     func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] {

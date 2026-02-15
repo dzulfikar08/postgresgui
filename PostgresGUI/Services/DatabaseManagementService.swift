@@ -31,18 +31,20 @@ class DatabaseManagementService: DatabaseManagementServiceProtocol {
     /// Create a new database
     func createDatabase(name: String) async throws {
         logger.info("Creating database: \(name)")
+        let queryExecutor = self.queryExecutor
 
         try await connectionManager.withConnection { conn in
-            try await self.queryExecutor.createDatabase(connection: conn, name: name)
+            try await queryExecutor.createDatabase(connection: conn, name: name)
         }
     }
 
     /// Delete a database
     func deleteDatabase(name: String) async throws {
         logger.info("Deleting database: \(name)")
+        let queryExecutor = self.queryExecutor
 
         try await connectionManager.withConnection { conn in
-            try await self.queryExecutor.dropDatabase(connection: conn, name: name)
+            try await queryExecutor.dropDatabase(connection: conn, name: name)
         }
 
         // If we deleted the current database, disconnect

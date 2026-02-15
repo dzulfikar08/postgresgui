@@ -23,27 +23,30 @@ class MetadataService: MetadataServiceProtocol {
     /// Fetch list of databases
     func fetchDatabases() async throws -> [DatabaseInfo] {
         logger.debug("Fetching databases")
+        let queryExecutor = self.queryExecutor
 
         return try await connectionManager.withConnection { conn in
-            try await self.queryExecutor.fetchDatabases(connection: conn)
+            try await queryExecutor.fetchDatabases(connection: conn)
         }
     }
 
     /// Fetch primary key columns for a table
     func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] {
         logger.debug("Fetching primary keys for \(schema).\(table)")
+        let queryExecutor = self.queryExecutor
 
         return try await connectionManager.withConnection { conn in
-            try await self.queryExecutor.fetchPrimaryKeys(connection: conn, schema: schema, table: table)
+            try await queryExecutor.fetchPrimaryKeys(connection: conn, schema: schema, table: table)
         }
     }
 
     /// Fetch column information for a table
     func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] {
         logger.debug("Fetching column info for \(schema).\(table)")
+        let queryExecutor = self.queryExecutor
 
         return try await connectionManager.withConnection { conn in
-            try await self.queryExecutor.fetchColumns(connection: conn, schema: schema, table: table)
+            try await queryExecutor.fetchColumns(connection: conn, schema: schema, table: table)
         }
     }
 }

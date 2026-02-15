@@ -40,7 +40,7 @@ enum Constants {
     
     // Pagination
     enum Pagination {
-        static let defaultRowsPerPage: Int = 1000
+        static let defaultRowsPerPage: Int = 100
         static let minRowsPerPage: Int = 10
         static let maxRowsPerPage: Int = 1000
     }

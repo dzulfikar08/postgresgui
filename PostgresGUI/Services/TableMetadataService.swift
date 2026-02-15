@@ -28,6 +28,8 @@ final class TableMetadataService: TableMetadataServiceProtocol {
     ) async -> (primaryKeys: [String]?, columnInfo: [ColumnInfo]?)? {
         // Store table ID to verify selection hasn't changed
         let tableId = table.id
+        let databaseId = connectionState.selectedDatabase?.id
+        let connectionId = connectionState.currentConnection?.id
 
         var primaryKeyColumns: [String]?
         var columnInfo: [ColumnInfo]?
@@ -45,8 +47,12 @@ final class TableMetadataService: TableMetadataServiceProtocol {
         }
 
         // Check if user switched tables during primary key fetch
-        guard connectionState.isTableStillSelected(tableId) else {
-            DebugLog.print("⚠️ [TableMetadataService] Table selection changed during metadata fetch, skipping update for \(table.schema).\(table.name)")
+        guard connectionState.isQueryContextValid(
+            tableId: tableId,
+            databaseId: databaseId,
+            connectionId: connectionId
+        ) else {
+            DebugLog.print("⚠️ [TableMetadataService] Query context changed during metadata fetch, skipping update for \(table.schema).\(table.name)")
             return nil
         }
 
@@ -63,8 +69,12 @@ final class TableMetadataService: TableMetadataServiceProtocol {
         }
 
         // Final check: only update if this table is still selected (prevents race condition)
-        guard connectionState.isTableStillSelected(tableId) else {
-            DebugLog.print("⚠️ [TableMetadataService] Table selection changed during metadata fetch, skipping update for \(table.schema).\(table.name)")
+        guard connectionState.isQueryContextValid(
+            tableId: tableId,
+            databaseId: databaseId,
+            connectionId: connectionId
+        ) else {
+            DebugLog.print("⚠️ [TableMetadataService] Query context changed during metadata fetch, skipping update for \(table.schema).\(table.name)")
             return nil
         }
 

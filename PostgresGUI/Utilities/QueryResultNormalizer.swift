@@ -6,8 +6,26 @@
 //
 
 import Foundation
+import Dispatch
 
 struct QueryResultNormalizer {
+    static func normalizeDisplayRowsOffMain(
+        rows: [TableRow],
+        columnNames: [String],
+        preferredColumnOrder: [String]? = nil
+    ) async -> ([TableRow], [String]) {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let normalized = normalizeDisplayRows(
+                    rows: rows,
+                    columnNames: columnNames,
+                    preferredColumnOrder: preferredColumnOrder
+                )
+                continuation.resume(returning: normalized)
+            }
+        }
+    }
+
     static func normalizeDisplayRows(
         rows: [TableRow],
         columnNames: [String],

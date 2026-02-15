@@ -21,6 +21,16 @@ struct QueryResultsView: View {
         appState.query.executingSavedQueryId == appState.query.currentSavedQueryId &&
         appState.query.executingSavedQueryId != nil
     }
+
+    /// Whether a table query is executing for the currently selected table
+    private var isExecutingTableQueryForSelectedTable: Bool {
+        appState.query.isExecutingTableQuery &&
+        appState.query.executingTableQueryTableId == appState.connection.selectedTable?.id
+    }
+
+    private var isExecutingResultsLoad: Bool {
+        isCurrentQueryExecuting || isExecutingTableQueryForSelectedTable
+    }
     
     private var columnNames: [String]? {
         // First try to get column names from stored queryColumnNames (works even for empty results)
@@ -35,7 +45,7 @@ struct QueryResultsView: View {
             results: appState.query.queryResults,
             columnNames: columnNames,
             searchText: searchText,
-            isExecuting: isCurrentQueryExecuting,
+            isExecuting: isExecutingResultsLoad,
             errorMessage: appState.query.queryErrorMessage,
             hasExecutedQuery: appState.query.showQueryResults,
             currentPage: appState.query.currentPage,
