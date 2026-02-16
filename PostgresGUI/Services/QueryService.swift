@@ -69,7 +69,12 @@ class QueryService: QueryServiceProtocol {
 
         DebugLog.print("🔍 [QueryService] Auto-generating query for table: \(table.schema).\(table.name) (ID: \(thisQueryID))")
 
-        let query = "SELECT * FROM \"\(table.schema)\".\"\(table.name)\" LIMIT \(limit) OFFSET \(offset);"
+        let query = makeWrappedTableBrowseQuery(
+            schema: table.schema,
+            table: table.name,
+            limit: limit,
+            offset: offset
+        )
         DebugLog.print("📝 [QueryService] Generated query: \(query) (ID: \(thisQueryID))")
 
         let startTime = clock.now()
@@ -85,7 +90,8 @@ class QueryService: QueryServiceProtocol {
                 let (normalizedRows, normalizedColumnNames) = try await fetchAndNormalizeDisplayRows(
                     sql: query,
                     preferredColumnOrder: preferredColumnOrder,
-                    queryId: thisQueryID
+                    queryId: thisQueryID,
+                    useDisplayWrapping: false
                 )
 
                 // Check if task was cancelled or a newer query has started
@@ -143,13 +149,18 @@ class QueryService: QueryServiceProtocol {
     private func fetchAndNormalizeDisplayRows(
         sql: String,
         preferredColumnOrder: [String]? = nil,
-        queryId: Int? = nil
+        queryId: Int? = nil,
+        useDisplayWrapping: Bool = true
     ) async throws -> ([TableRow], [String]) {
         try Task.checkCancellation()
 
         let dbFetchStart = clock.now()
         let (rows, columnNames) = try await withDatabaseTimeout {
-            try await self.databaseService.executeDisplayQuery(sql)
+            if useDisplayWrapping {
+                return try await self.databaseService.executeDisplayQuery(sql)
+            } else {
+                return try await self.databaseService.executeQuery(sql)
+            }
         }
         let dbFetchDuration = clock.now().timeIntervalSince(dbFetchStart)
 
@@ -174,5 +185,20 @@ class QueryService: QueryServiceProtocol {
         )
 
         return (normalizedRows, normalizedColumnNames)
+    }
+
+    private func makeWrappedTableBrowseQuery(
+        schema: String,
+        table: String,
+        limit: Int,
+        offset: Int
+    ) -> String {
+        let baseQuery = "SELECT * FROM \"\(schema)\".\"\(table)\" LIMIT \(limit) OFFSET \(offset)"
+        return """
+        SELECT to_jsonb(q) AS row
+        FROM (
+        \(baseQuery)
+        ) q
+        """
     }
 }

@@ -36,6 +36,10 @@ protocol DatabaseServiceProtocol: AnyObject {
     /// Full shutdown including all resources - call on app termination
     func shutdown() async
 
+    /// Interrupt in-flight table-browse work when a newer sidebar request supersedes it.
+    /// This should not update logical connection state exposed to the UI.
+    func interruptInFlightTableBrowseLoadForSupersession() async
+
     // MARK: - Database Operations
 
     /// Fetch list of databases

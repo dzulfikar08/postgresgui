@@ -31,6 +31,9 @@ final class MockDatabaseService: DatabaseServiceProtocol {
         connectedDatabase = nil
     }
 
+    func interruptInFlightTableBrowseLoadForSupersession() async {
+    }
+
     func fetchDatabases() async throws -> [DatabaseInfo] {
         return []
     }

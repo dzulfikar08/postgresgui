@@ -222,6 +222,7 @@ private final class PreviewDatabaseService: DatabaseServiceProtocol {
     ) async throws { }
     func disconnect() async { }
     func shutdown() async { }
+    func interruptInFlightTableBrowseLoadForSupersession() async { }
     func fetchDatabases() async throws -> [DatabaseInfo] { [] }
     func createDatabase(name: String) async throws { }
     func deleteDatabase(name: String) async throws { }

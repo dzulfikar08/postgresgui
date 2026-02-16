@@ -228,6 +228,28 @@ actor PostgresConnectionManager: ConnectionManagerProtocol {
         logger.info("Disconnected from PostgreSQL")
     }
 
+    /// Interrupt in-flight work when superseded by a newer table-browse request.
+    /// Preserves stored connection parameters and EventLoopGroup so reconnect remains fast.
+    func interruptInFlightOperationForSupersession() async {
+        logger.debug("Interrupting in-flight operation for supersession")
+
+        // Invalidate all in-flight work tied to older generations.
+        connectionGeneration &+= 1
+
+        // Clear active connection references immediately so stale tasks cannot keep using them.
+        let activeConnection = connection
+        connection = nil
+        wrappedConnection = nil
+
+        // Preserve storedParams + EventLoopGroup for quick reconnect on next operation.
+        guard let activeConnection else { return }
+        do {
+            try await activeConnection.close()
+        } catch {
+            logger.debug("Connection close during supersession interrupt returned error: \(error)")
+        }
+    }
+
     /// Full shutdown including EventLoopGroup - call on app termination
     func shutdown() async {
         logger.info("Shutting down PostgresConnectionManager")
@@ -336,11 +358,15 @@ actor PostgresConnectionManager: ConnectionManagerProtocol {
     ///
     /// If a connection error is detected, this method will attempt to reconnect once and retry the operation.
     func withConnection<T>(_ operation: @escaping (DatabaseConnectionProtocol) async throws -> T) async throws -> T {
+        try Task.checkCancellation()
+
         guard let wrappedConn = wrappedConnection else {
             // No connection - try to reconnect if we have stored params
             if storedParams != nil {
                 logger.info("No active connection, attempting reconnect...")
+                try Task.checkCancellation()
                 try await reconnect()
+                try Task.checkCancellation()
                 guard let newConn = wrappedConnection else {
                     throw ConnectionError.notConnected
                 }
@@ -363,19 +389,27 @@ actor PostgresConnectionManager: ConnectionManagerProtocol {
 
             if shouldRetry && storedParams != nil {
                 logger.warning("Connection error detected, attempting reconnect")
+                try Task.checkCancellation()
                 do {
                     try await reconnect()
+                    try Task.checkCancellation()
                     guard let newConn = wrappedConnection else {
                         throw ConnectionError.notConnected
                     }
                     logger.info("Reconnected successfully, retrying operation...")
                     return try await operation(newConn)
                 } catch {
+                    if error is CancellationError {
+                        throw error
+                    }
                     logger.error("Reconnect failed: \(String(reflecting: error))")
                     throw PostgresError.mapError(error)
                 }
             }
 
+            if error is CancellationError {
+                throw error
+            }
             logger.error("Operation failed (non-connection error)")
             throw PostgresError.mapError(error)
         }

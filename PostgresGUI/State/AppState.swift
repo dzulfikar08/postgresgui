@@ -30,7 +30,7 @@ class AppState {
     private var tableQueryTask: Task<Void, Never>?
     private var tableMetadataTask: Task<Void, Never>?
     private var tableQueryRequestId: Int = 0
-    private let tableQueryDispatchDebounceNanoseconds: UInt64 = 60_000_000
+    private let tableQueryDispatchDebounceNanoseconds: UInt64 = 120_000_000
 
     // MARK: - Initialization
 
@@ -57,6 +57,7 @@ class AppState {
     /// Request a table query and cancel any in-flight table query task.
     @MainActor
     func requestTableQuery(for table: TableInfo, limit: Int? = nil) {
+        let shouldInterruptSupersededInFlightLoad = hasInFlightTableBrowseLoadToSupersede()
         tableQueryTask?.cancel()
         tableMetadataTask?.cancel()
         query.cancelCurrentQuerySilentlyForSupersession()
@@ -66,9 +67,18 @@ class AppState {
         connection.selectedTable = table
 
         tableQueryTask = Task { @MainActor in
+            if shouldInterruptSupersededInFlightLoad {
+                await connection.databaseService.interruptInFlightTableBrowseLoadForSupersession()
+            }
+            guard isTableQueryRequestCurrent(requestId: requestId) else { return }
             try? await Task.sleep(nanoseconds: tableQueryDispatchDebounceNanoseconds)
             guard isTableQueryRequestCurrent(requestId: requestId) else { return }
-            await executeTableQueryInternal(for: table, limit: limit, requestId: requestId)
+            await executeTableQueryInternal(
+                for: table,
+                limit: limit,
+                requestId: requestId,
+                applyTableBrowseCompaction: true
+            )
         }
     }
 
@@ -85,11 +95,21 @@ class AppState {
         tableQueryRequestId += 1
         let requestId = tableQueryRequestId
         startTableQueryLoading(for: table)
-        await executeTableQueryInternal(for: table, limit: limit, requestId: requestId)
+        await executeTableQueryInternal(
+            for: table,
+            limit: limit,
+            requestId: requestId,
+            applyTableBrowseCompaction: false
+        )
     }
 
     @MainActor
-    private func executeTableQueryInternal(for table: TableInfo, limit: Int?, requestId: Int) async {
+    private func executeTableQueryInternal(
+        for table: TableInfo,
+        limit: Int?,
+        requestId: Int,
+        applyTableBrowseCompaction: Bool
+    ) async {
         defer {
             finishTableQueryLoadingIfCurrent(requestId: requestId)
         }
@@ -171,11 +191,34 @@ class AppState {
 
         // Update state based on result
         if result.isSuccess {
+            var resultRows = result.rows
+            if applyTableBrowseCompaction {
+                resultRows = await TableBrowseResultCompactor.compactRowsOffMain(
+                    rows: result.rows,
+                    maxCellCharacters: Constants.tableBrowseMaxCellCharacters,
+                    truncationSuffix: Constants.tableBrowseTruncationSuffix
+                )
+
+                guard isTableQueryRequestCurrent(requestId: requestId) else {
+                    return
+                }
+
+                guard connection.isQueryContextValid(
+                    tableId: tableId,
+                    databaseId: databaseId,
+                    connectionId: connectionId
+                ) else {
+                    DebugLog.print("⚠️ [AppState] Query for \(table.name) superseded after compaction, skipping state update")
+                    query.isExecutingQuery = false
+                    return
+                }
+            }
+
             if isPaginated {
                 // Check if we got more rows than requested (indicates next page exists)
                 query.hasNextPage = hasMorePages(fetchedRowCount: result.rows.count, pageSize: query.rowsPerPage)
                 // Trim to actual page size
-                let trimmedRows = query.hasNextPage ? Array(result.rows.prefix(query.rowsPerPage)) : result.rows
+                let trimmedRows = query.hasNextPage ? Array(resultRows.prefix(query.rowsPerPage)) : resultRows
                 let trimmedResult = QueryResult.success(
                     rows: trimmedRows,
                     columnNames: result.columnNames,
@@ -185,7 +228,12 @@ class AppState {
             } else {
                 // Non-paginated: use result as-is
                 query.hasNextPage = false
-                query.finishQueryExecution(with: result)
+                let compactedResult = QueryResult.success(
+                    rows: resultRows,
+                    columnNames: result.columnNames,
+                    executionTime: result.executionTime
+                )
+                query.finishQueryExecution(with: compactedResult)
             }
             query.isResultsReadOnlyDueToContextMismatch = false
 
@@ -224,6 +272,11 @@ class AppState {
     @MainActor
     private func isTableQueryRequestCurrent(requestId: Int) -> Bool {
         requestId == tableQueryRequestId && !Task.isCancelled
+    }
+
+    @MainActor
+    private func hasInFlightTableBrowseLoadToSupersede() -> Bool {
+        query.isExecutingTableQuery && (query.isExecutingQuery || query.currentQueryTask != nil)
     }
 
     @MainActor

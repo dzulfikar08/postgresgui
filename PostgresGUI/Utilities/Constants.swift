@@ -44,6 +44,10 @@ enum Constants {
         static let minRowsPerPage: Int = 10
         static let maxRowsPerPage: Int = 1000
     }
+
+    // Table browse payload compaction
+    static let tableBrowseMaxCellCharacters: Int = 2048
+    static let tableBrowseTruncationSuffix: String = "... [truncated]"
     
     // PostgreSQL defaults
     enum PostgreSQL {

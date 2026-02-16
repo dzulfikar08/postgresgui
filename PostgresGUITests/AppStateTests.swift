@@ -29,6 +29,7 @@ final class DelayedMockDatabaseService: DatabaseServiceProtocol {
     private(set) var executeDisplayQueryCallCount: Int = 0
     private(set) var lastExecuteQuerySQL: String?
     private(set) var lastExecuteDisplayQuerySQL: String?
+    private(set) var interruptInFlightTableBrowseLoadCallCount: Int = 0
 
     func connect(host: String, port: Int, username: String, password: String, database: String, sslMode: SSLMode) async throws {
         isConnected = true
@@ -43,6 +44,10 @@ final class DelayedMockDatabaseService: DatabaseServiceProtocol {
     func shutdown() async {
         isConnected = false
         connectedDatabase = nil
+    }
+
+    func interruptInFlightTableBrowseLoadForSupersession() async {
+        interruptInFlightTableBrowseLoadCallCount += 1
     }
 
     func fetchDatabases() async throws -> [DatabaseInfo] { [] }
@@ -395,6 +400,139 @@ struct AppStateTests {
             #expect(queryState.executingTableQueryTableId == nil)
         }
 
+        @Test func requestTableQuery_supersedingLoad_invokesHardInterrupt() async {
+            let (mockService, connectionState, _, appState) = createTestContext()
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+
+            let firstTable = TableInfo(name: "first_table", schema: "public")
+            let secondTable = TableInfo(name: "second_table", schema: "public")
+
+            mockService.queryHandler = { sql in
+                if sql.contains("\"public\".\"first_table\"") {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    return ([TableRow(values: ["source": "first"])], ["source"])
+                }
+                if sql.contains("\"public\".\"second_table\"") {
+                    return ([TableRow(values: ["source": "second"])], ["source"])
+                }
+                return ([], [])
+            }
+
+            appState.requestTableQuery(for: firstTable)
+            try? await Task.sleep(nanoseconds: 160_000_000) // First request passed debounce and started work
+            appState.requestTableQuery(for: secondTable)
+
+            try? await Task.sleep(nanoseconds: 20_000_000)
+            #expect(mockService.interruptInFlightTableBrowseLoadCallCount >= 1)
+        }
+
+        @Test func rapidTableClicks_latestWins_afterHardInterrupt() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+
+            let slowTable = TableInfo(name: "slow_table", schema: "public")
+            let middleTable = TableInfo(name: "middle_table", schema: "public")
+            let latestTable = TableInfo(name: "latest_table", schema: "public")
+
+            mockService.queryHandler = { sql in
+                if sql.contains("\"public\".\"slow_table\"") {
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    return ([TableRow(values: ["source": "slow"])], ["source"])
+                }
+                if sql.contains("\"public\".\"middle_table\"") {
+                    try? await Task.sleep(nanoseconds: 60_000_000)
+                    return ([TableRow(values: ["source": "middle"])], ["source"])
+                }
+                if sql.contains("\"public\".\"latest_table\"") {
+                    return ([TableRow(values: ["source": "latest"])], ["source"])
+                }
+                return ([], [])
+            }
+
+            appState.requestTableQuery(for: slowTable)
+            try? await Task.sleep(nanoseconds: 170_000_000)
+            appState.requestTableQuery(for: middleTable)
+            try? await Task.sleep(nanoseconds: 20_000_000)
+            appState.requestTableQuery(for: latestTable)
+
+            try? await Task.sleep(nanoseconds: 420_000_000)
+
+            #expect(mockService.interruptInFlightTableBrowseLoadCallCount >= 1)
+            #expect(connectionState.selectedTable?.id == latestTable.id)
+            #expect((queryState.queryResults.first?.values["source"] ?? nil) == "latest")
+        }
+
+        @Test func executeTableQuery_nonSidebarPath_doesNotInvokeHardInterrupt() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+
+            let firstTable = TableInfo(name: "first_table", schema: "public")
+            let secondTable = TableInfo(name: "second_table", schema: "public")
+
+            mockService.queryHandler = { sql in
+                if sql.contains("\"public\".\"first_table\"") {
+                    try? await Task.sleep(nanoseconds: 180_000_000)
+                    return ([TableRow(values: ["source": "first"])], ["source"])
+                }
+                if sql.contains("\"public\".\"second_table\"") {
+                    return ([TableRow(values: ["source": "second"])], ["source"])
+                }
+                return ([], [])
+            }
+
+            let firstTask = Task {
+                await appState.executeTableQuery(for: firstTable)
+            }
+
+            try? await Task.sleep(nanoseconds: 20_000_000)
+            await appState.executeTableQuery(for: secondTable)
+            await firstTask.value
+
+            #expect(mockService.interruptInFlightTableBrowseLoadCallCount == 0)
+            #expect((queryState.queryResults.first?.values["source"] ?? nil) == "second")
+        }
+
+        @Test func tableBrowseRequest_appliesValueCompaction() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+
+            let table = TableInfo(name: "events", schema: "public")
+            let longValue = String(repeating: "x", count: Constants.tableBrowseMaxCellCharacters + 256)
+            mockService.queryResults = ([TableRow(values: ["payload": longValue])], ["payload"])
+
+            appState.requestTableQuery(for: table, limit: 1)
+            try? await Task.sleep(nanoseconds: 320_000_000)
+
+            let compactedValue = queryState.queryResults.first?.values["payload"] ?? nil
+            #expect(compactedValue?.hasSuffix(Constants.tableBrowseTruncationSuffix) == true)
+            #expect(compactedValue?.count == Constants.tableBrowseMaxCellCharacters)
+        }
+
+        @Test func manualExecuteTableQuery_preservesFullValues() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+
+            let table = TableInfo(name: "events", schema: "public")
+            let longValue = String(repeating: "y", count: Constants.tableBrowseMaxCellCharacters + 256)
+            mockService.queryResults = ([TableRow(values: ["payload": longValue])], ["payload"])
+
+            await appState.executeTableQuery(for: table, limit: 1)
+
+            let value = queryState.queryResults.first?.values["payload"] ?? nil
+            #expect(value == longValue)
+            #expect(value?.hasSuffix(Constants.tableBrowseTruncationSuffix) == false)
+        }
+
         @Test func supersededRequest_doesNotClearLatestLoading() async {
             let (mockService, connectionState, queryState, appState) = createTestContext()
 
@@ -417,20 +555,20 @@ struct AppStateTests {
             }
 
             appState.requestTableQuery(for: firstTable)
-            try? await Task.sleep(nanoseconds: 20_000_000)
+            try? await Task.sleep(nanoseconds: 160_000_000)
             appState.requestTableQuery(for: latestTable)
 
             try? await Task.sleep(nanoseconds: 90_000_000)
             #expect(queryState.isExecutingTableQuery == true)
             #expect(queryState.executingTableQueryTableId == latestTable.id)
 
-            try? await Task.sleep(nanoseconds: 160_000_000)
+            try? await Task.sleep(nanoseconds: 280_000_000)
             #expect(queryState.isExecutingTableQuery == false)
             #expect(queryState.executingTableQueryTableId == nil)
             #expect((queryState.queryResults.first?.values["source"] ?? nil) == "latest")
         }
 
-        @Test func tableQuery_usesDisplayExecutionAndPreservesWrappedJsonExpansion() async {
+        @Test func tableQuery_usesExplicitJsonWrapAndPreservesExpansion() async {
             let (mockService, connectionState, queryState, appState) = createTestContext()
 
             connectionState.currentConnection = createConnection(name: "Test")
@@ -448,8 +586,9 @@ struct AppStateTests {
 
             await appState.executeTableQuery(for: table, limit: 1)
 
-            #expect(mockService.executeDisplayQueryCallCount == 1)
-            #expect(mockService.executeQueryCallCount == 0)
+            #expect(mockService.executeDisplayQueryCallCount == 0)
+            #expect(mockService.executeQueryCallCount == 1)
+            #expect(mockService.lastExecuteQuerySQL?.contains("SELECT to_jsonb(q) AS row") == true)
             #expect(Set(queryState.queryColumnNames ?? []) == Set(["id", "name"]))
             #expect((queryState.queryResults.first?.values["id"] ?? nil) == "1")
             #expect((queryState.queryResults.first?.values["name"] ?? nil) == "Alice")
@@ -503,7 +642,7 @@ struct AppStateTests {
             }
 
             appState.requestTableQuery(for: firstTable)
-            try? await Task.sleep(nanoseconds: 40_000_000)
+            try? await Task.sleep(nanoseconds: 180_000_000)
             appState.requestTableQuery(for: latestTable)
 
             try? await Task.sleep(nanoseconds: 360_000_000)

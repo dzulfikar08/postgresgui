@@ -51,6 +51,10 @@ protocol ConnectionManagerProtocol: Actor {
     /// Full shutdown including all resources - call on app termination
     func shutdown() async
 
+    /// Interrupt in-flight operation work for supersession.
+    /// Implementations should invalidate stale work and force fresh reconnect on next operation.
+    func interruptInFlightOperationForSupersession() async
+
     /// Execute an operation with the active connection
     /// - Parameter operation: Async closure that receives the abstract DatabaseConnectionProtocol
     /// - Returns: Result of the operation

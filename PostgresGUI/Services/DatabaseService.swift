@@ -117,6 +117,12 @@ class DatabaseService {
         _isConnected = false
     }
 
+    /// Interrupt in-flight table-browse work for supersession.
+    /// Keeps logical connection state intact while connection manager transparently reconnects.
+    func interruptInFlightTableBrowseLoadForSupersession() async {
+        await connectionManager.interruptInFlightOperationForSupersession()
+    }
+
     /// Test connection without saving (static method - doesn't require instance)
     nonisolated static func testConnection(
         host: String,
