@@ -208,9 +208,6 @@ struct TableListRowView: View {
             onShowAllRows: {
                 appState.requestTableQuery(for: table)
             },
-            onShowLimitedRows: {
-                appState.requestTableQuery(for: table, limit: 100)
-            },
             refreshQueryAction: {
                 Task {
                     await refreshQueryAction(table)
@@ -414,4 +411,3 @@ private struct TableContextMenuModalsWrapper: ViewModifier {
         }
     }
 }
-

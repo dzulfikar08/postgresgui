@@ -20,7 +20,6 @@ struct TableListRowComponent: View {
     // Callbacks
     let onToggleExpanded: () -> Void
     let onShowAllRows: () -> Void
-    let onShowLimitedRows: () -> Void
     let refreshQueryAction: () -> Void
     let onGenerateDDL: () -> Void
     let onShowExport: () -> Void
@@ -166,23 +165,6 @@ struct TableListRowComponent: View {
 
     @ViewBuilder
     private var tableMenuContent: some View {
-        // Show table data options
-        Button {
-            onShowAllRows()
-        } label: {
-            Label("Show All Rows", systemImage: "list.bullet")
-        }
-        .disabled(isExecutingQuery)
-
-        Button {
-            onShowLimitedRows()
-        } label: {
-            Label("Show 100 Rows", systemImage: "list.bullet")
-        }
-        .disabled(isExecutingQuery)
-
-        Divider()
-
         // Refresh
         Button {
             refreshQueryAction()
@@ -253,7 +235,6 @@ struct TableListRowComponent: View {
             showSchemaPrefix: true,
             onToggleExpanded: {},
             onShowAllRows: {},
-            onShowLimitedRows: {},
             refreshQueryAction: {},
             onGenerateDDL: {},
             onShowExport: {},
@@ -270,7 +251,6 @@ struct TableListRowComponent: View {
             showSchemaPrefix: true,
             onToggleExpanded: {},
             onShowAllRows: {},
-            onShowLimitedRows: {},
             refreshQueryAction: {},
             onGenerateDDL: {},
             onShowExport: {},
