@@ -56,8 +56,10 @@ class TabService: TabServiceProtocol {
 
     // MARK: - Syncing (ViewModels -> SwiftData)
 
-    /// Sync a TabViewModel back to its TabState in SwiftData
-    func syncToStorage(_ viewModel: TabViewModel) {
+    /// Sync a TabViewModel back to its TabState in SwiftData.
+    /// `includeCachedResults` should remain false for high-frequency updates (typing, selection)
+    /// to avoid repeatedly encoding large payloads.
+    func syncToStorage(_ viewModel: TabViewModel, includeCachedResults: Bool = true) {
         guard let tabState = fetchTabState(by: viewModel.id) else {
             DebugLog.print("⚠️ [TabService] Cannot sync - TabState not found for \(viewModel.id)")
             return
@@ -74,8 +76,10 @@ class TabService: TabServiceProtocol {
         tabState.selectedTableName = viewModel.selectedTableName
         tabState.selectedSchemaFilter = viewModel.selectedSchemaFilter
 
-        // Persist cached results for restoration after app restart
-        tabState.setCachedResults(viewModel.cachedResults, columnNames: viewModel.cachedColumnNames)
+        // Persist cached results for restoration after app restart when explicitly requested.
+        if includeCachedResults {
+            tabState.setCachedResults(viewModel.cachedResults, columnNames: viewModel.cachedColumnNames)
+        }
 
         save()
     }

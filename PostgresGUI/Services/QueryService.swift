@@ -23,26 +23,69 @@ class QueryService: QueryServiceProtocol {
 
     /// Execute a SQL query with timeout
     func executeQuery(_ sql: String, preferredColumnOrder: [String]? = nil) async -> QueryResult {
-        let startTime = clock.now()
-
-        do {
-            let (normalizedRows, normalizedColumnNames) = try await fetchAndNormalizeDisplayRows(
-                sql: sql,
-                preferredColumnOrder: preferredColumnOrder
+        if Task.isCancelled {
+            return .failure(
+                error: CancellationError(),
+                executionTime: 0
             )
-            let endTime = clock.now()
-            let executionTime = endTime.timeIntervalSince(startTime)
-
-            return .success(
-                rows: normalizedRows,
-                columnNames: normalizedColumnNames,
-                executionTime: executionTime
-            )
-        } catch {
-            let endTime = clock.now()
-            let executionTime = endTime.timeIntervalSince(startTime)
-            return .failure(error: error, executionTime: executionTime)
         }
+
+        // Cancel any existing query task and mark this request as latest.
+        queryState.currentQueryTask?.cancel()
+        queryState.currentQueryTask = nil
+        queryState.queryCounter += 1
+        let thisQueryID = queryState.queryCounter
+
+        let startTime = clock.now()
+        var result: QueryResult?
+
+        queryState.currentQueryTask = Task { @MainActor in
+            do {
+                guard !Task.isCancelled else { return }
+                let (normalizedRows, normalizedColumnNames) = try await fetchAndNormalizeDisplayRows(
+                    sql: sql,
+                    preferredColumnOrder: preferredColumnOrder,
+                    queryId: thisQueryID
+                )
+
+                guard !Task.isCancelled, thisQueryID == queryState.queryCounter else {
+                    DebugLog.print("⚠️ [QueryService] Query was cancelled or superseded (ID: \(thisQueryID), current: \(queryState.queryCounter))")
+                    return
+                }
+
+                let endTime = clock.now()
+                let executionTime = endTime.timeIntervalSince(startTime)
+                result = .success(
+                    rows: normalizedRows,
+                    columnNames: normalizedColumnNames,
+                    executionTime: executionTime
+                )
+            } catch {
+                guard !Task.isCancelled, thisQueryID == queryState.queryCounter else {
+                    DebugLog.print("⚠️ [QueryService] Query was cancelled or superseded during error handling (ID: \(thisQueryID), current: \(queryState.queryCounter))")
+                    return
+                }
+
+                let endTime = clock.now()
+                let executionTime = endTime.timeIntervalSince(startTime)
+                result = .failure(error: error, executionTime: executionTime)
+            }
+
+            if queryState.currentQueryTask?.isCancelled == false {
+                queryState.currentQueryTask = nil
+            }
+        }
+
+        await queryState.currentQueryTask?.value
+
+        return result ?? .failure(
+            error: NSError(
+                domain: "QueryService",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Query was cancelled"]
+            ),
+            executionTime: clock.now().timeIntervalSince(startTime)
+        )
     }
 
     /// Execute a table query with automatic SQL generation and race condition prevention

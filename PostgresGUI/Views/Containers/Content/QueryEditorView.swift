@@ -16,8 +16,18 @@ struct QueryEditorView: View {
 
     /// Check if the current query (for this saved query) is executing
     private var isCurrentQueryExecuting: Bool {
-        appState.query.executingSavedQueryId == appState.query.currentSavedQueryId &&
-        appState.query.executingSavedQueryId != nil
+        if let currentSavedQueryId = appState.query.currentSavedQueryId {
+            if appState.query.executingSavedQueryId == currentSavedQueryId {
+                return true
+            }
+            if appState.query.executingSavedQueryId == nil {
+                return appState.query.isExecutingQuery && !appState.query.isExecutingTableQuery
+            }
+            return false
+        }
+
+        // Ad-hoc (unsaved) editor query execution should still show progress.
+        return appState.query.isExecutingQuery && !appState.query.isExecutingTableQuery
     }
 
     var body: some View {

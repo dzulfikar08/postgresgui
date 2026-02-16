@@ -144,7 +144,8 @@ class TabManager {
         connectionId: UUID? = nil,
         databaseName: String? = nil,
         queryText: String? = nil,
-        savedQueryId: UUID? = nil
+        savedQueryId: UUID? = nil,
+        persistToStorage: Bool = true
     ) {
         guard let activeTab = activeTab, !activeTab.isPendingDeletion else { return }
 
@@ -161,8 +162,10 @@ class TabManager {
             activeTab.savedQueryId = savedQueryId
         }
 
-        // Sync to storage
-        tabService?.syncToStorage(activeTab)
+        guard persistToStorage else { return }
+
+        // Lightweight sync for metadata/text updates - cached results are unchanged.
+        tabService?.syncToStorage(activeTab, includeCachedResults: false)
     }
 
     func updateActiveTabTableSelection(schema: String?, name: String?) {
@@ -171,8 +174,8 @@ class TabManager {
         activeTab.selectedTableSchema = schema
         activeTab.selectedTableName = name
 
-        // Sync to storage
-        tabService?.syncToStorage(activeTab)
+        // Lightweight sync - table selection does not change cached results payload.
+        tabService?.syncToStorage(activeTab, includeCachedResults: false)
     }
 
     func updateActiveTabSchemaFilter(_ schemaFilter: String?) {
@@ -180,8 +183,8 @@ class TabManager {
 
         activeTab.selectedSchemaFilter = schemaFilter
 
-        // Sync to storage
-        tabService?.syncToStorage(activeTab)
+        // Lightweight sync - schema filter does not change cached results payload.
+        tabService?.syncToStorage(activeTab, includeCachedResults: false)
     }
 
     func updateActiveTabResults(results: [TableRow]?, columnNames: [String]?) {
@@ -200,8 +203,16 @@ class TabManager {
 
         activeTab.savedQueryId = nil
 
-        // Sync to storage
-        tabService?.syncToStorage(activeTab)
+        // Lightweight sync - savedQueryId change does not require cached-results re-encode.
+        tabService?.syncToStorage(activeTab, includeCachedResults: false)
+    }
+
+    /// Persist current active tab state on demand.
+    /// Use lightweight mode by default to avoid expensive cached-results encoding
+    /// for high-frequency updates like typing.
+    func syncActiveTabToStorage(includeCachedResults: Bool = false) {
+        guard let activeTab = activeTab, !activeTab.isPendingDeletion else { return }
+        tabService?.syncToStorage(activeTab, includeCachedResults: includeCachedResults)
     }
 
     // MARK: - Persistence

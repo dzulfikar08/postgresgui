@@ -26,6 +26,7 @@ class QueryEditorViewModel {
     var saveErrorMessage = ""
 
     private var saveTask: Task<Void, Never>?
+    private var queryExecutionRequestId: Int = 0
 
     // MARK: - Initialization
 
@@ -63,13 +64,19 @@ class QueryEditorViewModel {
                     DebugLog.print("💾 [QueryEditorViewModel] Auto-save cancelled (new keystroke)")
                     return
                 }
+                tabManager.syncActiveTabToStorage(includeCachedResults: false)
                 DebugLog.print("💾 [QueryEditorViewModel] Auto-save triggered after debounce")
                 await saveQueryWithRetry()
             }
         }
 
-        // Update tab state immediately
-        tabManager.updateActiveTab(connectionId: nil, databaseName: nil, queryText: newText)
+        // Update tab state immediately in memory; persistence is debounced above.
+        tabManager.updateActiveTab(
+            connectionId: nil,
+            databaseName: nil,
+            queryText: newText,
+            persistToStorage: false
+        )
     }
 
     // MARK: - Query Execution
@@ -95,6 +102,8 @@ class QueryEditorViewModel {
         let queryText = appState.query.queryText
         let queryType = QueryTypeDetector.detect(queryText)
         let tableName = QueryTypeDetector.extractTableName(queryText)
+        queryExecutionRequestId += 1
+        let requestId = queryExecutionRequestId
 
         // Capture the saved query ID that initiated this execution
         let executingSavedQueryId = appState.query.currentSavedQueryId
@@ -114,6 +123,17 @@ class QueryEditorViewModel {
             queryText,
             preferredColumnOrder: preferredColumnOrder
         )
+
+        guard requestId == queryExecutionRequestId else {
+            DebugLog.print("⚠️ [QueryEditorViewModel] Query result superseded, ignoring stale completion")
+            return
+        }
+
+        if let error = result.error, isCancellationLike(error) {
+            DebugLog.print("⚠️ [QueryEditorViewModel] Query cancelled/superseded before completion")
+            executingTab.finishQueryExecution()
+            return
+        }
 
         // Finish execution tracking on the tab
         executingTab.finishQueryExecution()
@@ -309,5 +329,18 @@ class QueryEditorViewModel {
         } catch {
             DebugLog.print("⚠️ [QueryEditorViewModel] Failed to refresh tables: \(error)")
         }
+    }
+
+    private func isCancellationLike(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == "QueryService", nsError.code == -1 {
+            return true
+        }
+
+        return nsError.localizedDescription.localizedCaseInsensitiveContains("cancel")
     }
 }
