@@ -32,7 +32,6 @@ struct ConnectionDatabasePicker: View {
     let onSelectDatabase: (DatabaseInfo) -> Void
     let onDeleteDatabase: (DatabaseInfo) -> Void
     let onCreateDatabase: () -> Void
-    let onDeleteError: (String) -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -183,19 +182,15 @@ struct ConnectionDatabasePicker: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Button {
-                if isSelected {
-                    onDeleteError("Cannot delete '\(database.name)' because it is currently selected. Please select a different database first.")
-                } else {
-                    showDatabaseDropdown = false
-                    onDeleteDatabase(database)
-                }
+                showDatabaseDropdown = false
+                onDeleteDatabase(database)
             } label: {
                 Image(systemName: "trash")
                     .font(.system(size: PickerFontSize.deleteIcon))
-                    .foregroundColor(isSelected ? .secondary.opacity(0.5) : .secondary)
+                    .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
-            .help(isSelected ? "Cannot delete selected database" : "Delete database")
+            .help("Delete database")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -280,8 +275,7 @@ private struct ConnectionDatabasePickerPreview: View {
             showDatabaseDropdown: $showDatabaseDropdown,
             onSelectDatabase: { _ in },
             onDeleteDatabase: { _ in },
-            onCreateDatabase: { },
-            onDeleteError: { _ in }
+            onCreateDatabase: { }
         )
         .environment(appState)
         .frame(width: 420)

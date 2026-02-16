@@ -22,8 +22,7 @@ class DatabaseService {
     private lazy var metadataService = MetadataService(connectionManager: connectionManager, queryExecutor: queryExecutor)
     private lazy var databaseManagementService = DatabaseManagementService(
         connectionManager: connectionManager,
-        queryExecutor: queryExecutor,
-        databaseService: self
+        queryExecutor: queryExecutor
     )
 
     // MARK: - Connection State
@@ -168,6 +167,36 @@ class DatabaseService {
     func deleteDatabase(name: String) async throws {
         guard _isConnected else {
             throw ConnectionError.notConnected
+        }
+
+        if currentDatabase == name {
+            let maintenanceCandidates = ["postgres", "template1"].filter { $0 != name }
+            var reconnectErrors: [String] = []
+            var switchedDatabase: String?
+            var lastReconnectError: Error?
+
+            for candidate in maintenanceCandidates {
+                do {
+                    logger.info("Switching away from target database '\(name)' to maintenance database '\(candidate)' before drop")
+                    try await connectionManager.reconnectUsingStoredCredentials(database: candidate)
+                    switchedDatabase = candidate
+                    break
+                } catch {
+                    lastReconnectError = error
+                    reconnectErrors.append("\(candidate): \(error.localizedDescription)")
+                    logger.warning("Failed maintenance reconnect candidate '\(candidate)': \(error)")
+                }
+            }
+
+            guard let switchedDatabase else {
+                _isConnected = false
+                currentDatabase = nil
+                logger.error("Unable to switch away from '\(name)' before drop. Errors: \(reconnectErrors.joined(separator: " | "))")
+                throw lastReconnectError ?? ConnectionError.notConnected
+            }
+
+            currentDatabase = switchedDatabase
+            _isConnected = true
         }
 
         try await databaseManagementService.deleteDatabase(name: name)

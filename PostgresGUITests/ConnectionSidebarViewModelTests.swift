@@ -2,7 +2,7 @@
 //  ConnectionSidebarViewModelTests.swift
 //  PostgresGUITests
 //
-//  Unit tests for manual toolbar refresh behavior.
+//  Unit tests for sidebar refresh and database delete behavior.
 //
 
 import Foundation
@@ -14,6 +14,9 @@ import Testing
 final class ToolbarRefreshMockDatabaseService: DatabaseServiceProtocol {
     var isConnected: Bool = true
     var connectedDatabase: String? = "postgres"
+    var deleteDatabaseError: Error?
+    private(set) var deleteDatabaseCallCount: Int = 0
+    private(set) var deleteDatabaseNames: [String] = []
 
     func connect(host: String, port: Int, username: String, password: String, database: String, sslMode: SSLMode) async throws {
         isConnected = true
@@ -34,7 +37,13 @@ final class ToolbarRefreshMockDatabaseService: DatabaseServiceProtocol {
 
     func fetchDatabases() async throws -> [DatabaseInfo] { [] }
     func createDatabase(name: String) async throws {}
-    func deleteDatabase(name: String) async throws {}
+    func deleteDatabase(name: String) async throws {
+        deleteDatabaseCallCount += 1
+        deleteDatabaseNames.append(name)
+        if let deleteDatabaseError {
+            throw deleteDatabaseError
+        }
+    }
     func fetchTables(database: String) async throws -> [TableInfo] { [] }
     func fetchSchemas(database: String) async throws -> [String] { [] }
     func deleteTable(schema: String, table: String) async throws {}
@@ -118,20 +127,56 @@ struct ConnectionSidebarViewModelTests {
 
     @MainActor
     private func makeViewModel(
-        refreshService: TableRefreshServiceProtocol
+        refreshService: ToolbarRefreshMockService
     ) throws -> ConnectionSidebarViewModel {
+        let context = try makeViewModelContext(
+            refreshService: refreshService,
+            databaseService: ToolbarRefreshMockDatabaseService(),
+            userDefaults: ToolbarRefreshMockUserDefaults()
+        )
+        return context.viewModel
+    }
+
+    @MainActor
+    private func makeViewModelContext(
+        refreshService: ToolbarRefreshMockService,
+        databaseService: ToolbarRefreshMockDatabaseService,
+        userDefaults: ToolbarRefreshMockUserDefaults
+    ) throws -> (
+        viewModel: ConnectionSidebarViewModel,
+        appState: AppState,
+        refreshService: ToolbarRefreshMockService,
+        databaseService: ToolbarRefreshMockDatabaseService,
+        userDefaults: ToolbarRefreshMockUserDefaults
+    ) {
         let appState = AppState(
-            connection: ConnectionState(databaseService: ToolbarRefreshMockDatabaseService()),
+            connection: ConnectionState(databaseService: databaseService),
             query: QueryState()
         )
-        return ConnectionSidebarViewModel(
+        let viewModel = ConnectionSidebarViewModel(
             appState: appState,
             tabManager: TabManager(),
             loadingState: LoadingState(),
             modelContext: try makeModelContext(),
             keychainService: ToolbarRefreshMockKeychainService(),
-            userDefaults: ToolbarRefreshMockUserDefaults(),
+            userDefaults: userDefaults,
             tableRefreshService: refreshService
+        )
+        return (viewModel, appState, refreshService, databaseService, userDefaults)
+    }
+
+    @MainActor
+    private func makeDefaultViewModelContext() throws -> (
+        viewModel: ConnectionSidebarViewModel,
+        appState: AppState,
+        refreshService: ToolbarRefreshMockService,
+        databaseService: ToolbarRefreshMockDatabaseService,
+        userDefaults: ToolbarRefreshMockUserDefaults
+    ) {
+        try makeViewModelContext(
+            refreshService: ToolbarRefreshMockService(),
+            databaseService: ToolbarRefreshMockDatabaseService(),
+            userDefaults: ToolbarRefreshMockUserDefaults()
         )
     }
 
@@ -164,5 +209,110 @@ struct ConnectionSidebarViewModelTests {
         #expect(refreshService.refreshCallCount == 2)
         #expect(refreshService.refreshCancellationCount >= 1)
         #expect(refreshService.refreshCompletionCount == 1)
+    }
+
+    @Test
+    @MainActor
+    func deleteDatabase_selectedDatabase_isAllowedAndClearsDbDependentState() async throws {
+        let context = try makeDefaultViewModelContext()
+        let selected = DatabaseInfo(name: "hikedb")
+        let other = DatabaseInfo(name: "postgres")
+        let table = TableInfo(name: "hikes", schema: "public")
+
+        context.appState.connection.databases = [selected, other]
+        context.appState.connection.selectedDatabase = selected
+        context.appState.connection.tables = [table]
+        context.appState.connection.selectedTable = table
+        context.appState.connection.schemas = ["public", "audit"]
+        context.appState.connection.selectedSchema = "audit"
+        context.appState.connection.tableMetadataCache = [
+            table.id: (primaryKeys: ["id"], columns: [ColumnInfo(name: "id", dataType: "uuid")])
+        ]
+        context.userDefaults.set(selected.name, forKey: Constants.UserDefaultsKeys.lastDatabaseName)
+
+        await context.viewModel.deleteDatabase(selected)
+
+        #expect(context.databaseService.deleteDatabaseCallCount == 1)
+        #expect(context.databaseService.deleteDatabaseNames == ["hikedb"])
+        #expect(context.appState.connection.databases.map(\.name) == ["postgres"])
+        #expect(context.appState.connection.selectedDatabase == nil)
+        #expect(context.appState.connection.tables.isEmpty)
+        #expect(context.appState.connection.selectedTable == nil)
+        #expect(context.appState.connection.schemas.isEmpty)
+        #expect(context.appState.connection.selectedSchema == nil)
+        #expect(context.appState.connection.tableMetadataCache.isEmpty)
+        #expect(context.userDefaults.string(forKey: Constants.UserDefaultsKeys.lastDatabaseName) == nil)
+    }
+
+    @Test
+    @MainActor
+    func deleteDatabase_selectedDatabase_failure_rollsBackAllState() async throws {
+        let databaseService = ToolbarRefreshMockDatabaseService()
+        databaseService.deleteDatabaseError = ConnectionError.databaseNotFound("hikedb")
+        let context = try makeViewModelContext(
+            refreshService: ToolbarRefreshMockService(),
+            databaseService: databaseService,
+            userDefaults: ToolbarRefreshMockUserDefaults()
+        )
+        let selected = DatabaseInfo(name: "hikedb")
+        let other = DatabaseInfo(name: "postgres")
+        let table = TableInfo(name: "hikes", schema: "public")
+        let cachedColumns = [ColumnInfo(name: "id", dataType: "uuid")]
+
+        context.appState.connection.databases = [selected, other]
+        context.appState.connection.selectedDatabase = selected
+        context.appState.connection.tables = [table]
+        context.appState.connection.selectedTable = table
+        context.appState.connection.schemas = ["public"]
+        context.appState.connection.selectedSchema = "public"
+        context.appState.connection.tableMetadataCache = [
+            table.id: (primaryKeys: ["id"], columns: cachedColumns)
+        ]
+        context.userDefaults.set(selected.name, forKey: Constants.UserDefaultsKeys.lastDatabaseName)
+
+        await context.viewModel.deleteDatabase(selected)
+
+        #expect(context.databaseService.deleteDatabaseCallCount == 1)
+        #expect(context.appState.connection.databases.map(\.name) == ["hikedb", "postgres"])
+        #expect(context.appState.connection.selectedDatabase?.id == selected.id)
+        #expect(context.appState.connection.tables.map(\.id) == [table.id])
+        #expect(context.appState.connection.selectedTable?.id == table.id)
+        #expect(context.appState.connection.schemas == ["public"])
+        #expect(context.appState.connection.selectedSchema == "public")
+        #expect(context.appState.connection.tableMetadataCache[table.id]?.primaryKeys == ["id"])
+        #expect(context.appState.connection.tableMetadataCache[table.id]?.columns == cachedColumns)
+        #expect(context.userDefaults.string(forKey: Constants.UserDefaultsKeys.lastDatabaseName) == "hikedb")
+    }
+
+    @Test
+    @MainActor
+    func deleteDatabase_selectedDatabase_success_triggersRefresh() async throws {
+        let refreshService = ToolbarRefreshMockService()
+        let context = try makeViewModelContext(
+            refreshService: refreshService,
+            databaseService: ToolbarRefreshMockDatabaseService(),
+            userDefaults: ToolbarRefreshMockUserDefaults()
+        )
+        let selected = DatabaseInfo(name: "hikedb")
+        context.appState.connection.databases = [selected]
+        context.appState.connection.selectedDatabase = selected
+
+        await context.viewModel.deleteDatabase(selected)
+
+        #expect(refreshService.refreshCallCount == 1)
+    }
+
+    @Test
+    @MainActor
+    func deleteDatabase_selectedDatabase_clearsLastDatabasePreference() async throws {
+        let context = try makeDefaultViewModelContext()
+        let selected = DatabaseInfo(name: "hikedb")
+        context.appState.connection.databases = [selected]
+        context.appState.connection.selectedDatabase = selected
+        context.userDefaults.set(selected.name, forKey: Constants.UserDefaultsKeys.lastDatabaseName)
+
+        await context.viewModel.deleteDatabase(selected)
+
+        #expect(context.userDefaults.string(forKey: Constants.UserDefaultsKeys.lastDatabaseName) == nil)
     }
 }

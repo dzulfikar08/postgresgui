@@ -14,6 +14,17 @@ import SwiftData
 @Observable
 @MainActor
 class ConnectionSidebarViewModel {
+    private struct DeleteDatabaseSnapshot {
+        let databases: [DatabaseInfo]
+        let selectedDatabase: DatabaseInfo?
+        let tables: [TableInfo]
+        let selectedTable: TableInfo?
+        let schemas: [String]
+        let selectedSchema: String?
+        let tableMetadataCache: [String: (primaryKeys: [String]?, columns: [ColumnInfo]?)]
+        let lastDatabaseName: String?
+    }
+
     // MARK: - Dependencies
 
     private let appState: AppState
@@ -184,8 +195,17 @@ class ConnectionSidebarViewModel {
     /// Delete a database with optimistic update
     func deleteDatabase(_ database: DatabaseInfo) async {
         let versionBeforeDelete = appState.connection.databasesVersion
-        let originalDatabases = appState.connection.databases
-        let wasSelected = appState.connection.selectedDatabase?.id == database.id
+        let snapshot = DeleteDatabaseSnapshot(
+            databases: appState.connection.databases,
+            selectedDatabase: appState.connection.selectedDatabase,
+            tables: appState.connection.tables,
+            selectedTable: appState.connection.selectedTable,
+            schemas: appState.connection.schemas,
+            selectedSchema: appState.connection.selectedSchema,
+            tableMetadataCache: appState.connection.tableMetadataCache,
+            lastDatabaseName: userDefaults.string(forKey: Constants.UserDefaultsKeys.lastDatabaseName)
+        )
+        let wasSelected = snapshot.selectedDatabase?.id == database.id
 
         // Optimistically remove from UI
         appState.connection.databases.removeAll { $0.id == database.id }
@@ -193,21 +213,34 @@ class ConnectionSidebarViewModel {
             appState.connection.selectedDatabase = nil
             appState.connection.tables = []
             appState.connection.selectedTable = nil
+            appState.connection.schemas = []
+            appState.connection.selectedSchema = nil
+            appState.connection.tableMetadataCache = [:]
+            userDefaults.removeObject(forKey: Constants.UserDefaultsKeys.lastDatabaseName)
         }
         databaseToDelete = nil
 
         do {
             try await appState.connection.databaseService.deleteDatabase(name: database.name)
             appState.connection.databasesVersion += 1
+            await tableRefreshService.refresh(appState: appState)
         } catch {
             // Rollback if databases list hasn't changed
             if isSafeToRollback(
                 versionAtOperationStart: versionBeforeDelete,
                 currentVersion: appState.connection.databasesVersion
             ) {
-                appState.connection.databases = originalDatabases
-                if wasSelected {
-                    appState.connection.selectedDatabase = database
+                appState.connection.databases = snapshot.databases
+                appState.connection.selectedDatabase = snapshot.selectedDatabase
+                appState.connection.tables = snapshot.tables
+                appState.connection.selectedTable = snapshot.selectedTable
+                appState.connection.schemas = snapshot.schemas
+                appState.connection.selectedSchema = snapshot.selectedSchema
+                appState.connection.tableMetadataCache = snapshot.tableMetadataCache
+                if let lastDatabaseName = snapshot.lastDatabaseName {
+                    userDefaults.set(lastDatabaseName, forKey: Constants.UserDefaultsKeys.lastDatabaseName)
+                } else {
+                    userDefaults.removeObject(forKey: Constants.UserDefaultsKeys.lastDatabaseName)
                 }
             }
             deleteError = PostgresError.extractDetailedMessage(error)

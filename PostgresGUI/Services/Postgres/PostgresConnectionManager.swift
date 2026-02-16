@@ -279,6 +279,24 @@ actor PostgresConnectionManager: ConnectionManagerProtocol {
 
     // MARK: - Reconnection
 
+    /// Reconnect using the last successful credentials but override database name.
+    func reconnectUsingStoredCredentials(database: String) async throws {
+        guard let params = storedParams else {
+            logger.error("Cannot reconnect using stored credentials: no stored params")
+            throw ConnectionError.notConnected
+        }
+
+        logger.info("Reconnecting to database '\(database)' using stored credentials")
+        try await connect(
+            host: params.host,
+            port: params.port,
+            username: params.username,
+            password: params.password,
+            database: database,
+            tlsMode: params.tlsMode
+        )
+    }
+
     /// Reconnect using stored connection parameters
     private func reconnect() async throws {
         guard let params = storedParams else {

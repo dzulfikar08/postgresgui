@@ -202,8 +202,7 @@ struct ConnectionsDatabasesSidebar: View {
             showDatabaseDropdown: $showDatabaseDropdown,
             onSelectDatabase: handleSelectDatabase,
             onDeleteDatabase: handleDeleteDatabase,
-            onCreateDatabase: handleCreateDatabase,
-            onDeleteError: handleDeleteError
+            onCreateDatabase: handleCreateDatabase
         )
     }
 
@@ -237,10 +236,6 @@ struct ConnectionsDatabasesSidebar: View {
 
     private func handleCreateDatabase() {
         appState.navigation.showCreateDatabase()
-    }
-
-    private func handleDeleteError(_ error: String) {
-        viewModel?.deleteError = error
     }
 
     @MainActor

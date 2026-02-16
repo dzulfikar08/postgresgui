@@ -55,6 +55,11 @@ protocol ConnectionManagerProtocol: Actor {
     /// Implementations should invalidate stale work and force fresh reconnect on next operation.
     func interruptInFlightOperationForSupersession() async
 
+    /// Reconnect to a specific database using the last successful credentials.
+    /// - Parameter database: Target database name for the new connection.
+    /// - Throws: ConnectionError.notConnected when no prior credentials are available.
+    func reconnectUsingStoredCredentials(database: String) async throws
+
     /// Execute an operation with the active connection
     /// - Parameter operation: Async closure that receives the abstract DatabaseConnectionProtocol
     /// - Returns: Result of the operation
