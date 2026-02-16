@@ -450,13 +450,20 @@ class AppState {
             return cachedColumns.map { $0.name }
         }
 
+        // Capture context so stale async completions do not poison metadata cache
+        // after the user changes connection/database.
+        let expectedConnectionId = connection.currentConnection?.id
+        let expectedDatabaseId = connection.selectedDatabase?.id
+
         do {
             let columns = try await connection.databaseService.fetchColumnInfo(
                 schema: table.schema,
                 table: table.name
             )
 
-            guard connection.isTableStillSelected(table.id) else {
+            guard connection.currentConnection?.id == expectedConnectionId,
+                  connection.selectedDatabase?.id == expectedDatabaseId else {
+                DebugLog.print("⚠️ [AppState] Skipping preferred column order cache for \(table.id) due to context change")
                 return nil
             }
 
@@ -497,7 +504,8 @@ class AppState {
 
         let scopedMatches: [TableInfo]
         if let selectedSchema = connection.selectedSchema {
-            scopedMatches = matchesByName.filter { $0.schema == selectedSchema }
+            let schemaScopedMatches = matchesByName.filter { $0.schema == selectedSchema }
+            scopedMatches = schemaScopedMatches.isEmpty ? matchesByName : schemaScopedMatches
         } else {
             scopedMatches = matchesByName
         }
