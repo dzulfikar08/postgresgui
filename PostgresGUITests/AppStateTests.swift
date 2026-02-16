@@ -533,6 +533,184 @@ struct AppStateTests {
             #expect(value?.hasSuffix(Constants.tableBrowseTruncationSuffix) == false)
         }
 
+        @Test func requestPaginatedTableQuery_cacheHit_skipsDbAndAppliesImmediately() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            let connection = createConnection(name: "Test")
+            let database = DatabaseInfo(name: "testdb")
+            let table = TableInfo(name: "users", schema: "public")
+            connectionState.currentConnection = connection
+            connectionState.selectedDatabase = database
+            connectionState.selectedTable = table
+
+            let cacheContext = TableBrowsePageCacheContext(
+                connectionId: connection.id,
+                databaseId: database.id,
+                tableId: table.id,
+                rowsPerPage: queryState.rowsPerPage
+            )
+            queryState.cacheTableBrowsePage(
+                page: 1,
+                rows: [TableRow(values: ["source": "cached_page_1"])],
+                columnNames: ["source"],
+                hasNextPage: true,
+                context: cacheContext
+            )
+
+            appState.requestPaginatedTableQuery(for: table, targetPage: 1)
+
+            #expect(mockService.executeQueryCallCount == 0)
+            #expect(mockService.executeDisplayQueryCallCount == 0)
+            #expect(queryState.currentPage == 1)
+            #expect(queryState.hasNextPage == true)
+            #expect((queryState.queryResults.first?.values["source"] ?? nil) == "cached_page_1")
+            #expect(queryState.isExecutingTableQuery == false)
+        }
+
+        @Test func requestPaginatedTableQuery_cacheMiss_appliesCompaction() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+            let table = TableInfo(name: "events", schema: "public")
+            connectionState.selectedTable = table
+
+            let longValue = String(repeating: "p", count: Constants.tableBrowseMaxCellCharacters + 400)
+            mockService.queryResults = ([TableRow(values: ["payload": longValue])], ["payload"])
+
+            appState.requestPaginatedTableQuery(for: table, targetPage: 1)
+            try? await Task.sleep(nanoseconds: 220_000_000)
+
+            let compactedValue = queryState.queryResults.first?.values["payload"] ?? nil
+            #expect(mockService.executeQueryCallCount == 1)
+            #expect(compactedValue?.hasSuffix(Constants.tableBrowseTruncationSuffix) == true)
+            #expect(compactedValue?.count == Constants.tableBrowseMaxCellCharacters)
+            #expect(queryState.currentPage == 1)
+        }
+
+        @Test func rapidPaginationRequests_latestWins_invokesHardInterrupt() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+            let table = TableInfo(name: "users", schema: "public")
+            connectionState.selectedTable = table
+            queryState.currentPage = 0
+            queryState.hasNextPage = true
+
+            mockService.queryHandler = { sql in
+                if sql.contains("OFFSET 100") {
+                    try? await Task.sleep(nanoseconds: 260_000_000)
+                    return ([TableRow(values: ["source": "page_1"])], ["source"])
+                }
+                if sql.contains("OFFSET 200") {
+                    return ([TableRow(values: ["source": "page_2"])], ["source"])
+                }
+                return ([], [])
+            }
+
+            appState.requestPaginatedTableQuery(for: table, targetPage: 1)
+            try? await Task.sleep(nanoseconds: 30_000_000)
+            appState.requestPaginatedTableQuery(for: table, targetPage: 2)
+
+            try? await Task.sleep(nanoseconds: 360_000_000)
+
+            #expect(mockService.interruptInFlightTableBrowseLoadCallCount >= 1)
+            #expect(queryState.currentPage == 2)
+            #expect((queryState.queryResults.first?.values["source"] ?? nil) == "page_2")
+        }
+
+        @Test func paginationFailure_doesNotCommitTargetPage() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+            let table = TableInfo(name: "users", schema: "public")
+            connectionState.selectedTable = table
+            queryState.currentPage = 0
+            queryState.hasNextPage = true
+
+            mockService.queryHandler = { sql in
+                if sql.contains("OFFSET 100") {
+                    throw NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "page load failed"])
+                }
+                return ([TableRow(values: ["source": "ok"])], ["source"])
+            }
+
+            appState.requestPaginatedTableQuery(for: table, targetPage: 1)
+            try? await Task.sleep(nanoseconds: 180_000_000)
+
+            #expect(queryState.currentPage == 0)
+            #expect(queryState.queryError != nil)
+        }
+
+        @Test func paginationMetadata_cached_skipsRefetch() async {
+            let metadataService = DelayedMockTableMetadataService()
+            let (mockService, connectionState, queryState, appState) = createTestContext(
+                tableMetadataService: metadataService
+            )
+
+            connectionState.currentConnection = createConnection(name: "Test")
+            connectionState.selectedDatabase = DatabaseInfo(name: "testdb")
+            let table = TableInfo(name: "users", schema: "public")
+            connectionState.selectedTable = table
+            queryState.currentPage = 0
+            queryState.hasNextPage = true
+            connectionState.tableMetadataCache[table.id] = (
+                primaryKeys: [],
+                columns: [ColumnInfo(name: "id", dataType: "integer")]
+            )
+
+            mockService.queryResults = ([TableRow(values: ["id": "1"])], ["id"])
+
+            appState.requestPaginatedTableQuery(for: table, targetPage: 1)
+            try? await Task.sleep(nanoseconds: 180_000_000)
+
+            #expect(metadataService.callCount == 0)
+        }
+
+        @Test func pageCache_evictsToThreePages() async {
+            let (mockService, connectionState, queryState, appState) = createTestContext()
+
+            let connection = createConnection(name: "Test")
+            let database = DatabaseInfo(name: "testdb")
+            let table = TableInfo(name: "users", schema: "public")
+            connectionState.currentConnection = connection
+            connectionState.selectedDatabase = database
+            connectionState.selectedTable = table
+            queryState.currentPage = 0
+            queryState.hasNextPage = true
+
+            mockService.queryHandler = { sql in
+                if sql.contains("OFFSET 0") { return ([TableRow(values: ["page": "0"])], ["page"]) }
+                if sql.contains("OFFSET 100") { return ([TableRow(values: ["page": "1"])], ["page"]) }
+                if sql.contains("OFFSET 200") { return ([TableRow(values: ["page": "2"])], ["page"]) }
+                if sql.contains("OFFSET 300") { return ([TableRow(values: ["page": "3"])], ["page"]) }
+                return ([], [])
+            }
+
+            appState.requestPaginatedTableQuery(for: table, targetPage: 0)
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            appState.requestPaginatedTableQuery(for: table, targetPage: 1)
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            appState.requestPaginatedTableQuery(for: table, targetPage: 2)
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            appState.requestPaginatedTableQuery(for: table, targetPage: 3)
+            try? await Task.sleep(nanoseconds: 160_000_000)
+
+            let context = TableBrowsePageCacheContext(
+                connectionId: connection.id,
+                databaseId: database.id,
+                tableId: table.id,
+                rowsPerPage: queryState.rowsPerPage
+            )
+
+            #expect(queryState.tableBrowsePageCacheCount == Constants.tableBrowseMaxCachedPages)
+            #expect(queryState.cachedTableBrowsePage(for: 0, context: context) == nil)
+            #expect(queryState.cachedTableBrowsePage(for: 1, context: context) != nil)
+            #expect(queryState.cachedTableBrowsePage(for: 3, context: context) != nil)
+        }
+
         @Test func supersededRequest_doesNotClearLatestLoading() async {
             let (mockService, connectionState, queryState, appState) = createTestContext()
 

@@ -77,7 +77,56 @@ class AppState {
                 for: table,
                 limit: limit,
                 requestId: requestId,
-                applyTableBrowseCompaction: true
+                applyTableBrowseCompaction: true,
+                targetPage: nil
+            )
+        }
+    }
+
+    /// Request a paginated table query for a specific target page.
+    /// Uses cached pages when available and latest-wins cancellation when not.
+    @MainActor
+    func requestPaginatedTableQuery(for table: TableInfo, targetPage: Int) {
+        guard targetPage >= 0 else { return }
+
+        let shouldInterruptSupersededInFlightLoad = hasInFlightTableBrowseLoadToSupersede()
+        tableQueryTask?.cancel()
+        tableMetadataTask?.cancel()
+        query.cancelCurrentQuerySilentlyForSupersession()
+        tableQueryRequestId += 1
+        let requestId = tableQueryRequestId
+        connection.selectedTable = table
+
+        let paginationContext = makeTableBrowsePageCacheContext(for: table)
+        if let cachedPage = query.cachedTableBrowsePage(for: targetPage, context: paginationContext) {
+            if shouldInterruptSupersededInFlightLoad {
+                tableQueryTask = Task { @MainActor in
+                    guard isTableQueryRequestCurrent(requestId: requestId) else { return }
+                    await connection.databaseService.interruptInFlightTableBrowseLoadForSupersession()
+                }
+            } else {
+                tableQueryTask = nil
+            }
+            applyCachedPaginatedTableBrowsePage(
+                cachedPage,
+                table: table,
+                targetPage: targetPage
+            )
+            return
+        }
+
+        startTableQueryLoading(for: table)
+        tableQueryTask = Task { @MainActor in
+            if shouldInterruptSupersededInFlightLoad {
+                await connection.databaseService.interruptInFlightTableBrowseLoadForSupersession()
+            }
+            guard isTableQueryRequestCurrent(requestId: requestId) else { return }
+            await executeTableQueryInternal(
+                for: table,
+                limit: nil,
+                requestId: requestId,
+                applyTableBrowseCompaction: true,
+                targetPage: targetPage
             )
         }
     }
@@ -99,7 +148,8 @@ class AppState {
             for: table,
             limit: limit,
             requestId: requestId,
-            applyTableBrowseCompaction: false
+            applyTableBrowseCompaction: limit == nil,
+            targetPage: nil
         )
     }
 
@@ -108,7 +158,8 @@ class AppState {
         for table: TableInfo,
         limit: Int?,
         requestId: Int,
-        applyTableBrowseCompaction: Bool
+        applyTableBrowseCompaction: Bool,
+        targetPage: Int?
     ) async {
         defer {
             finishTableQueryLoadingIfCurrent(requestId: requestId)
@@ -143,13 +194,12 @@ class AppState {
             // Custom limit specified - no pagination
             effectiveLimit = customLimit
             isPaginated = false
-            // Reset pagination state for non-paginated queries
-            query.currentPage = 0
         } else {
             // Use pagination - fetch +1 to detect if more pages exist
             effectiveLimit = query.rowsPerPage + 1
             isPaginated = true
         }
+        let requestedPage = isPaginated ? max(targetPage ?? query.currentPage, 0) : 0
 
         // Determine preferred column order (table order) from cache only.
         // Avoiding an extra metadata round-trip here keeps rapid table switching responsive.
@@ -163,7 +213,7 @@ class AppState {
         let result = await queryService.executeTableQuery(
             for: table,
             limit: effectiveLimit,
-            offset: isPaginated ? calculateOffset(page: query.currentPage, pageSize: query.rowsPerPage) : 0,
+            offset: isPaginated ? calculateOffset(page: requestedPage, pageSize: query.rowsPerPage) : 0,
             preferredColumnOrder: preferredColumnOrder
         )
 
@@ -216,18 +266,34 @@ class AppState {
 
             if isPaginated {
                 // Check if we got more rows than requested (indicates next page exists)
-                query.hasNextPage = hasMorePages(fetchedRowCount: result.rows.count, pageSize: query.rowsPerPage)
+                let hasNextPage = hasMorePages(fetchedRowCount: result.rows.count, pageSize: query.rowsPerPage)
                 // Trim to actual page size
-                let trimmedRows = query.hasNextPage ? Array(resultRows.prefix(query.rowsPerPage)) : resultRows
+                let trimmedRows = hasNextPage ? Array(resultRows.prefix(query.rowsPerPage)) : resultRows
+                query.hasNextPage = hasNextPage
+                query.currentPage = requestedPage
                 let trimmedResult = QueryResult.success(
                     rows: trimmedRows,
                     columnNames: result.columnNames,
                     executionTime: result.executionTime
                 )
                 query.finishQueryExecution(with: trimmedResult)
+
+                query.cacheTableBrowsePage(
+                    page: requestedPage,
+                    rows: trimmedRows,
+                    columnNames: result.columnNames,
+                    hasNextPage: hasNextPage,
+                    context: makeTableBrowsePageCacheContext(
+                        tableId: tableId,
+                        databaseId: databaseId,
+                        connectionId: connectionId
+                    ),
+                    maxCachedPages: Constants.tableBrowseMaxCachedPages
+                )
             } else {
                 // Non-paginated: use result as-is
                 query.hasNextPage = false
+                query.currentPage = 0
                 let compactedResult = QueryResult.success(
                     rows: resultRows,
                     columnNames: result.columnNames,
@@ -244,13 +310,15 @@ class AppState {
                 columnNames: query.queryColumnNames
             )
 
-            // Fetch table metadata (primary keys, column info) for edit/delete operations
-            startTableMetadataFetch(
-                for: table,
-                tableId: tableId,
-                databaseId: databaseId,
-                connectionId: connectionId
-            )
+            // Fetch table metadata (primary keys, column info) only when missing.
+            if shouldFetchTableMetadata(for: table) {
+                startTableMetadataFetch(
+                    for: table,
+                    tableId: tableId,
+                    databaseId: databaseId,
+                    connectionId: connectionId
+                )
+            }
         } else {
             query.finishQueryExecution(with: result)
         }
@@ -277,6 +345,61 @@ class AppState {
     @MainActor
     private func hasInFlightTableBrowseLoadToSupersede() -> Bool {
         query.isExecutingTableQuery && (query.isExecutingQuery || query.currentQueryTask != nil)
+    }
+
+    @MainActor
+    private func applyCachedPaginatedTableBrowsePage(
+        _ page: TableBrowsePageSnapshot,
+        table: TableInfo,
+        targetPage: Int
+    ) {
+        query.queryError = nil
+        query.showTimeoutAlert = false
+        query.queryExecutionTime = nil
+        query.isExecutingQuery = false
+        query.isExecutingTableQuery = false
+        query.executingTableQueryTableId = nil
+        query.hasNextPage = page.hasNextPage
+        query.currentPage = targetPage
+        query.updateQueryResults(page.rows, columnNames: page.columnNames)
+        query.isResultsReadOnlyDueToContextMismatch = false
+        query.cachedResultsTableId = table.id
+
+        tabManager?.updateActiveTabResults(
+            results: query.queryResults,
+            columnNames: query.queryColumnNames
+        )
+    }
+
+    @MainActor
+    private func makeTableBrowsePageCacheContext(for table: TableInfo) -> TableBrowsePageCacheContext {
+        makeTableBrowsePageCacheContext(
+            tableId: table.id,
+            databaseId: connection.selectedDatabase?.id,
+            connectionId: connection.currentConnection?.id
+        )
+    }
+
+    @MainActor
+    private func makeTableBrowsePageCacheContext(
+        tableId: String,
+        databaseId: String?,
+        connectionId: UUID?
+    ) -> TableBrowsePageCacheContext {
+        TableBrowsePageCacheContext(
+            connectionId: connectionId,
+            databaseId: databaseId,
+            tableId: tableId,
+            rowsPerPage: query.rowsPerPage
+        )
+    }
+
+    @MainActor
+    private func shouldFetchTableMetadata(for table: TableInfo) -> Bool {
+        guard let cached = connection.tableMetadataCache[table.id] else {
+            return true
+        }
+        return cached.primaryKeys == nil || cached.columns == nil
     }
 
     @MainActor

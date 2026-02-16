@@ -104,34 +104,19 @@ class QueryResultsViewModel {
     func goToPreviousPage() {
         guard appState.query.currentPage > 0,
               let table = appState.connection.selectedTable else { return }
-        appState.query.currentPage -= 1
-        appState.query.hasNextPage = true  // We know there's a next page since we came from it
-        Task {
-            await executeTableQuery(for: table)
+        let targetPage = appState.query.currentPage - 1
+        Task { @MainActor in
+            appState.requestPaginatedTableQuery(for: table, targetPage: targetPage)
         }
     }
 
     /// Go to the next page of results
     func goToNextPage() {
-        guard let table = appState.connection.selectedTable else { return }
-        appState.query.currentPage += 1
-        Task {
-            await executeTableQuery(for: table)
+        guard appState.query.hasNextPage,
+              let table = appState.connection.selectedTable else { return }
+        let targetPage = appState.query.currentPage + 1
+        Task { @MainActor in
+            appState.requestPaginatedTableQuery(for: table, targetPage: targetPage)
         }
-    }
-
-    // MARK: - Private Helpers
-
-    private func executeTableQuery(for table: TableInfo) async {
-        await appState.executeTableQuery(for: table)
-        // Only update cache tracking if this table is still selected
-        // (prevents race condition when rapidly switching tables)
-        guard appState.connection.isTableStillSelected(table.id) else { return }
-        appState.query.cachedResultsTableId = table.id
-        // Cache results to tab for restoration on tab switch
-        tabManager.updateActiveTabResults(
-            results: appState.query.queryResults,
-            columnNames: appState.query.queryColumnNames
-        )
     }
 }

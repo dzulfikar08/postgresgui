@@ -14,6 +14,22 @@ struct CachedQueryResult {
     let executedAt: Date
 }
 
+/// Cache key for table-browse pagination pages.
+/// Keeps cache scoped to current connection/database/table/page-size context.
+struct TableBrowsePageCacheContext: Equatable {
+    let connectionId: UUID?
+    let databaseId: String?
+    let tableId: String
+    let rowsPerPage: Int
+}
+
+/// Snapshot for a cached table-browse page.
+struct TableBrowsePageSnapshot {
+    let rows: [TableRow]
+    let columnNames: [String]
+    let hasNextPage: Bool
+}
+
 /// Manages query execution state and results
 @Observable
 @MainActor
@@ -75,6 +91,11 @@ class QueryState {
     var currentPage: Int = 0
     var rowsPerPage: Int = Constants.Pagination.defaultRowsPerPage
     var hasNextPage: Bool = false
+
+    // In-memory table-browse page cache (current context only)
+    private var tableBrowsePageCacheContext: TableBrowsePageCacheContext?
+    private var tableBrowsePageCache: [Int: TableBrowsePageSnapshot] = [:]
+    private var tableBrowsePageCacheLRU: [Int] = []
 
     // Query execution management (for cancellation and race condition prevention)
     var currentQueryTask: Task<Void, Never>? = nil
@@ -273,6 +294,7 @@ class QueryState {
         isResultsReadOnlyDueToContextMismatch = false
         currentPage = 0
         hasNextPage = false
+        clearTableBrowsePageCache()
         currentSavedQueryId = nil
         lastSavedAt = nil
         currentQueryName = nil
@@ -316,5 +338,80 @@ class QueryState {
     /// Clear all cached SavedQuery results
     func clearAllCachedResults() {
         savedQueryResultsCache.removeAll()
+    }
+
+    // MARK: - Table Browse Page Cache (In-Memory)
+
+    /// Get a cached page for the given table-browse context.
+    /// Resets cache if context changed.
+    func cachedTableBrowsePage(
+        for page: Int,
+        context: TableBrowsePageCacheContext
+    ) -> TableBrowsePageSnapshot? {
+        guard page >= 0 else { return nil }
+        ensureTableBrowsePageCacheContext(context)
+        guard let snapshot = tableBrowsePageCache[page] else {
+            return nil
+        }
+        touchTableBrowsePageInLRU(page)
+        return snapshot
+    }
+
+    /// Store a page in table-browse cache and evict least-recently-used pages
+    /// to keep memory bounded.
+    func cacheTableBrowsePage(
+        page: Int,
+        rows: [TableRow],
+        columnNames: [String],
+        hasNextPage: Bool,
+        context: TableBrowsePageCacheContext,
+        maxCachedPages: Int = Constants.tableBrowseMaxCachedPages
+    ) {
+        guard page >= 0 else { return }
+        ensureTableBrowsePageCacheContext(context)
+
+        tableBrowsePageCache[page] = TableBrowsePageSnapshot(
+            rows: rows,
+            columnNames: columnNames,
+            hasNextPage: hasNextPage
+        )
+        touchTableBrowsePageInLRU(page)
+
+        guard maxCachedPages > 0 else {
+            clearTableBrowsePageCache()
+            return
+        }
+
+        while tableBrowsePageCache.count > maxCachedPages {
+            guard let leastRecentPage = tableBrowsePageCacheLRU.first else { break }
+            tableBrowsePageCache.removeValue(forKey: leastRecentPage)
+            tableBrowsePageCacheLRU.removeFirst()
+        }
+    }
+
+    /// Clear table-browse page cache.
+    func clearTableBrowsePageCache() {
+        tableBrowsePageCacheContext = nil
+        tableBrowsePageCache.removeAll()
+        tableBrowsePageCacheLRU.removeAll()
+    }
+
+    /// Number of pages currently cached for table-browse (test/debug helper).
+    var tableBrowsePageCacheCount: Int {
+        tableBrowsePageCache.count
+    }
+
+    private func ensureTableBrowsePageCacheContext(_ context: TableBrowsePageCacheContext) {
+        guard tableBrowsePageCacheContext != context else { return }
+        tableBrowsePageCacheContext = context
+        tableBrowsePageCache.removeAll()
+        tableBrowsePageCacheLRU.removeAll()
+    }
+
+    private func touchTableBrowsePageInLRU(_ page: Int) {
+        if let existingIndex = tableBrowsePageCacheLRU.firstIndex(of: page) {
+            tableBrowsePageCacheLRU.remove(at: existingIndex)
+        }
+        tableBrowsePageCacheLRU.append(page)
     }
 }

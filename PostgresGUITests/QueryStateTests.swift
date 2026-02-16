@@ -414,6 +414,29 @@ struct QueryStateTests {
             state.reset()
             #expect(state.mutationToast == nil)
         }
+
+        @Test func reset_clearsTableBrowsePageCache() {
+            let state = QueryState()
+            let context = TableBrowsePageCacheContext(
+                connectionId: UUID(),
+                databaseId: "db",
+                tableId: "public.users",
+                rowsPerPage: 100
+            )
+            state.cacheTableBrowsePage(
+                page: 0,
+                rows: [TableRow(values: ["id": "1"])],
+                columnNames: ["id"],
+                hasNextPage: true,
+                context: context
+            )
+            #expect(state.tableBrowsePageCacheCount == 1)
+
+            state.reset()
+
+            #expect(state.tableBrowsePageCacheCount == 0)
+            #expect(state.cachedTableBrowsePage(for: 0, context: context) == nil)
+        }
     }
 
     // MARK: - Cleanup Tests
@@ -469,6 +492,58 @@ struct QueryStateTests {
 
             #expect(state.mutationToast == nil)
             #expect(state.toastTimer == nil)
+        }
+    }
+
+    // MARK: - Table Browse Page Cache Tests
+
+    @Suite("Table Browse Page Cache")
+    @MainActor
+    struct TableBrowsePageCacheTests {
+
+        @Test func tableBrowsePageCache_storesAndReadsByContext() {
+            let state = QueryState()
+            let context = TableBrowsePageCacheContext(
+                connectionId: UUID(),
+                databaseId: "db",
+                tableId: "public.users",
+                rowsPerPage: 100
+            )
+            let rows = [TableRow(values: ["id": "1"])]
+
+            state.cacheTableBrowsePage(
+                page: 0,
+                rows: rows,
+                columnNames: ["id"],
+                hasNextPage: true,
+                context: context
+            )
+
+            let cached = state.cachedTableBrowsePage(for: 0, context: context)
+            #expect(cached != nil)
+            #expect(cached?.rows.count == 1)
+            #expect(cached?.columnNames == ["id"])
+            #expect(cached?.hasNextPage == true)
+        }
+
+        @Test func tableBrowsePageCache_evictsOldestWhenOverLimit() {
+            let state = QueryState()
+            let context = TableBrowsePageCacheContext(
+                connectionId: UUID(),
+                databaseId: "db",
+                tableId: "public.users",
+                rowsPerPage: 100
+            )
+
+            state.cacheTableBrowsePage(page: 0, rows: [TableRow(values: ["page": "0"])], columnNames: ["page"], hasNextPage: true, context: context, maxCachedPages: 3)
+            state.cacheTableBrowsePage(page: 1, rows: [TableRow(values: ["page": "1"])], columnNames: ["page"], hasNextPage: true, context: context, maxCachedPages: 3)
+            state.cacheTableBrowsePage(page: 2, rows: [TableRow(values: ["page": "2"])], columnNames: ["page"], hasNextPage: true, context: context, maxCachedPages: 3)
+            state.cacheTableBrowsePage(page: 3, rows: [TableRow(values: ["page": "3"])], columnNames: ["page"], hasNextPage: false, context: context, maxCachedPages: 3)
+
+            #expect(state.tableBrowsePageCacheCount == 3)
+            #expect(state.cachedTableBrowsePage(for: 0, context: context) == nil)
+            #expect(state.cachedTableBrowsePage(for: 1, context: context) != nil)
+            #expect(state.cachedTableBrowsePage(for: 3, context: context) != nil)
         }
     }
 
