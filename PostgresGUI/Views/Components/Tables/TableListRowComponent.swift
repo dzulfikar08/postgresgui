@@ -102,6 +102,7 @@ struct TableListRowComponent: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: rowControlHeight)
                 .padding(.horizontal, 4)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .onHover { hovering in
