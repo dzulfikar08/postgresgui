@@ -36,6 +36,8 @@ class ConnectionSidebarViewModel {
 
     // Connection state
     var connectionToDelete: ConnectionProfile?
+    private var manualRefreshTask: Task<Void, Never>?
+    private var manualRefreshRequestId: Int = 0
 
     /// Static flag to ensure auto-restore only happens once per app session
     private static var hasRestoredConnectionGlobally = false
@@ -283,5 +285,32 @@ class ConnectionSidebarViewModel {
     func retryTableLoading() async {
         guard let database = appState.connection.selectedDatabase else { return }
         await loadTables(for: database)
+    }
+
+    /// Triggered by sidebar toolbar refresh button.
+    /// Uses latest-wins semantics for rapid repeated clicks.
+    func refreshOnDemandFromToolbar() async {
+        manualRefreshRequestId += 1
+        let requestId = manualRefreshRequestId
+
+        if manualRefreshTask != nil {
+            DebugLog.print("🔄 [ConnectionSidebarViewModel] Cancelling previous manual refresh before starting request \(requestId)")
+        }
+        manualRefreshTask?.cancel()
+
+        DebugLog.print("🔄 [ConnectionSidebarViewModel] Manual refresh requested (id: \(requestId))")
+        manualRefreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let startedAt = Date()
+            DebugLog.print("🔄 [ConnectionSidebarViewModel] Manual refresh started (id: \(requestId))")
+            await self.tableRefreshService.refresh(appState: self.appState)
+            let duration = Date().timeIntervalSince(startedAt)
+            if Task.isCancelled {
+                DebugLog.print("⚠️ [ConnectionSidebarViewModel] Manual refresh task cancelled (id: \(requestId), duration: \(String(format: "%.3f", duration))s)")
+            } else {
+                DebugLog.print("✅ [ConnectionSidebarViewModel] Manual refresh finished (id: \(requestId), duration: \(String(format: "%.3f", duration))s)")
+            }
+        }
+        await manualRefreshTask?.value
     }
 }

@@ -24,17 +24,45 @@ struct ConnectionsDatabasesSidebar: View {
 
     // Database dropdown state
     @State private var showDatabaseDropdown = false
+    @State private var isRefreshButtonHovered = false
 
     var body: some View {
         contentWithChangeHandlers
             .onAppear {
-                viewModel = ConnectionSidebarViewModel(
-                    appState: appState,
-                    tabManager: tabManager,
-                    loadingState: loadingState,
-                    modelContext: modelContext,
-                    keychainService: keychainService
-                )
+                _ = ensureViewModel()
+            }
+            .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        DebugLog.print("🔄 [ConnectionsDatabasesSidebar] Refresh toolbar button clicked")
+                        Task { @MainActor in
+                            await ensureViewModel().refreshOnDemandFromToolbar()
+                        }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .contentShape(Rectangle())
+                    .onHover { isRefreshButtonHovered = $0 }
+                    .help("")
+                    .popover(
+                        isPresented: Binding(
+                            get: { isRefreshButtonHovered },
+                            set: { newValue in
+                                if !newValue {
+                                    isRefreshButtonHovered = false
+                                }
+                            }
+                        ),
+                        arrowEdge: .bottom
+                    ) {
+                        Text("Refreshes database list and table list.")
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 280, alignment: .center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(8)
+                    }
+                }
             }
             .modifier(DatabaseAlertsModifier(
                 showConnectionError: Binding(
@@ -213,6 +241,23 @@ struct ConnectionsDatabasesSidebar: View {
 
     private func handleDeleteError(_ error: String) {
         viewModel?.deleteError = error
+    }
+
+    @MainActor
+    private func ensureViewModel() -> ConnectionSidebarViewModel {
+        if let viewModel {
+            return viewModel
+        }
+
+        let newViewModel = ConnectionSidebarViewModel(
+            appState: appState,
+            tabManager: tabManager,
+            loadingState: loadingState,
+            modelContext: modelContext,
+            keychainService: keychainService
+        )
+        viewModel = newViewModel
+        return newViewModel
     }
 }
 

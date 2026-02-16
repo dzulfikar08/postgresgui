@@ -18,6 +18,6 @@ protocol TableRefreshServiceProtocol {
         appState: AppState
     ) async
 
-    /// Refreshes both databases and tables lists.
+    /// Refreshes database list when connected; refreshes tables/schemas when a database is selected.
     func refresh(appState: AppState) async
 }
