@@ -545,41 +545,6 @@ git commit -m "feat: add SQLToken enum for SQL parsing
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ```
 
-    /// Operator (=, <>, LIKE, etc.)
-    case operator(String)
-
-    /// String literal
-    case stringLiteral(String)
-
-    /// Whitespace (spaces, tabs, newlines)
-    case whitespace
-
-    /// Dot operator (.)
-    case dot
-
-    /// Comma separator (,)
-    case comma
-}
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `swift test --filter SQLTokenTests`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add PostgresGUI/Models/SQLToken.swift PostgresGUITests/Models/SQLTokenTests.swift
-git commit -m "feat: add SQLToken enum for SQL parsing
-
-- Define 7 token types: keyword, identifier, operator, stringLiteral, whitespace, dot, comma
-- Support lexical analysis for SQL context detection
-- Add unit tests for all token types
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
-```
-
 ---
 
 ## Chunk 3: Metadata Service Extension
