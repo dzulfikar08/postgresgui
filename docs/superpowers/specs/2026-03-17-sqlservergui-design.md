@@ -303,6 +303,24 @@ SqlServerGUI/
 
 ## 7. Implementation Plan
 
+### 7.0 Phase 0: Technical Validation (Week 0)
+
+**Goal**: Validate FreeTDS Swift interop feasibility
+
+**Deliverables**:
+- Working "Hello World" SQL Server connection from Swift
+- Basic query execution returning parsed results
+- Type conversion for 5 common types (INT, VARCHAR, BIT, DATETIME, DECIMAL)
+- Performance baseline (connect time, query time)
+- Memory safety validation (no leaks after 100 operations)
+
+**Success Criteria**:
+- Can connect to SQL Server and execute SELECT in <50 lines of Swift
+- No crashes or memory leaks in 100-iteration test
+- Performance within 3x of PostgresGUI for simple query
+
+**Go/No-Go Decision**: If PoC fails, re-evaluate alternative approaches (see Appendix C)
+
 ### 7.1 Phase 1: Foundation (Week 1-2)
 
 **Goal**: Basic SQL Server connectivity
@@ -439,9 +457,28 @@ SqlServerGUI/
 
 ### 12.2 Performance Metrics
 
-- Connection time < 2 seconds (local)
-- Query response time comparable to PostgresGUI
-- Memory footprint similar to PostgresGUI
+**PostgresGUI Performance Baseline**:
+- SwiftNIO: Non-blocking, event-driven I/O
+- Single EventLoopGroup handles many connections
+- Minimal thread overhead
+- Connection time: < 2 seconds (local)
+
+**SqlServerGUI Expected Performance**:
+- FreeTDS: Blocking calls require thread per operation
+- Estimated 2-5x slower for concurrent operations
+- Memory footprint: ~50MB higher (thread stacks)
+
+**Realistic Performance Targets**:
+- Connection time: < 3 seconds (local) (vs. < 2s for PostgresGUI)
+- Query response: Within 3x of PostgresGUI for single queries
+- Memory footprint: < 200MB above PostgresGUI
+- Concurrent query limit: 5 simultaneous queries (to bound thread creation)
+
+**Mitigation Strategies**:
+- Limit concurrent queries using semaphore pattern
+- Use operation queues to bound thread creation
+- Cache metadata aggressively
+- Use connection pooling to reduce overhead
 
 ### 12.3 Quality Metrics
 
@@ -476,3 +513,312 @@ Key system views for metadata queries:
 | String literal | `'text'` | `'text'` (same) |
 | Boolean type | `BOOLEAN` | `BIT` |
 | Schema delimiter | `.` | `.` (same) |
+
+## Appendix C: Alternative Approaches Evaluated
+
+### Option 1: FreeTDS + Swift C Interop (Chosen Approach)
+
+**Pros:**
+- Free, open-source, mature library (20+ years history)
+- Full SQL Server feature support including modern versions
+- Active community and documentation
+- Proven technology in production environments
+- Cross-platform support
+
+**Cons:**
+- No existing Swift wrappers (must build from scratch)
+- Complex memory management with unsafe C pointers
+- Distribution challenges (dylib bundling or user installation)
+- Synchronous API requires async bridging
+- Unknown performance characteristics in Swift context
+- Thread-per-request model less efficient than SwiftNIO
+
+**Risk Level**: HIGH
+
+### Option 2: ODBC Approach
+
+**Pros:**
+- macOS includes iODBC framework
+- Standardized interface with good documentation
+- Better abstraction than raw C libraries
+- Native ODBC drivers available for SQL Server
+
+**Cons:**
+- Requires ODBC driver installation on user machines
+- Additional abstraction layer adds overhead
+- May have performance limitations
+- Less direct control over connection
+- Driver installation complexity for users
+
+**Risk Level**: MEDIUM
+
+### Option 3: Commercial SQL Server Driver
+
+**Pros:**
+- Native macOS support
+- Professional maintenance and support
+- Better Swift integration potential
+- Regular updates and bug fixes
+
+**Cons:**
+- Cost (licensing fees, potentially significant)
+- Vendor lock-in
+- May not support all advanced features
+- Long-term viability concerns
+
+**Risk Level**: MEDIUM
+
+### Option 4: Middleware/Proxy Service
+
+**Pros:**
+- Could reuse existing PostgresGUI unchanged
+- SQL Server logic runs on server-side
+- No client-side C library dependencies
+
+**Cons:**
+- Requires additional infrastructure deployment
+- Network latency adds overhead
+- Security and compliance concerns
+- Single point of failure
+- More complex architecture
+
+**Risk Level**: HIGH
+
+### Decision Rationale
+
+**Chosen**: FreeTDS + Swift C Interop (Option 1)
+
+**Justification**:
+1. **Cost**: Free and open-source is critical for a project that may be distributed freely
+2. **Feature Completeness**: FreeTDS supports all SQL Server features needed for full parity
+3. **Control**: Direct access to TDS protocol allows optimization and debugging
+4. **Precedent**: Many successful database tools use FreeTDS (DBeaver, DataGrip JDBC driver)
+
+**Mitigation of Risks**:
+- **Phase 0 PoC** will validate technical feasibility before full commitment
+- **Alternative options documented** if FreeTDS proves unworkable
+- **Performance targets adjusted** to reflect architectural differences
+- **Distribution strategy** addresses user installation concerns
+
+**Go/No-Go Criteria**: After Phase 0 PoC, if any of these conditions exist, pivot to ODBC:
+- Cannot establish stable connection within 50 lines of Swift code
+- Memory leaks detected in 100-iteration test
+- Performance worse than 5x PostgresGUI baseline
+- Async bridging proves unreliable
+
+## Appendix D: FreeTDS Distribution Implementation
+
+### Development Setup
+
+```bash
+# Install via Homebrew
+brew install freetds
+
+# Verify installation
+brew list freetds
+# /opt/homebrew/Cellar/freetds/1.3.14/include/sybdb.h
+# /opt/homebrew/Cellar/freetds/1.3.14/lib/libsybdb.dylib
+
+# Create symlink for development
+ln -s /opt/homebrew/lib/libsybdb.dylib /path/to/SqlServerGUI/Resources/
+```
+
+### Production Bundling Strategy
+
+#### Step 1: Build Universal Binary
+
+```bash
+# Clone FreeTDS
+git clone https://github.com/FreeTDS/freetds.git
+cd freetds
+
+# Build for arm64 (Apple Silicon)
+./configure --host=aarch64-apple-darwin --prefix=/tmp/freetds-arm64
+make && make install
+
+# Build for x86_64 (Intel)
+make clean
+./configure --host=x86_64-apple-darwin --prefix=/tmp/freetds-x86_64
+make && make install
+
+# Create universal binary
+lipo -create -output libsybdb.universal.dylib \
+  /tmp/freetds-arm64/lib/libsybdb.dylib \
+  /tmp/freetds-x86_64/lib/libsybdb.dylib
+
+# Verify
+lipo -info libsybdb.universal.dylib
+# Architectures in the fat file: libsybdb.universal.dylib are: x86_64 arm64
+```
+
+#### Step 2: Prepare for App Bundling
+
+```bash
+# Copy to app resources
+cp libsybdb.universal.dylib SqlServerGUI/Resources/libsybdb.dylib
+
+# Update library ID to be @executable_path-relative
+install_name_tool -id @executable_path/../Resources/libsybdb.dylib \
+  SqlServerGUI/Resources/libsybdb.dylib
+
+# Verify the change
+otool -D SqlServerGUI/Resources/libsybdb.dylib
+# @executable_path/../Resources/libsybdb.dylib
+```
+
+#### Step 3: Update Xcode Build Settings
+
+Add to `SqlServerGUI.xcodeproj` build settings:
+```
+FRAMEWORK_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
+LD_RUNPATH_SEARCH_PATHS = @executable_path/../Frameworks @executable_path/../Resources
+```
+
+#### Step 4: Code Signing Considerations
+
+```bash
+# Sign the bundled library
+codesign --force --deep --sign "Developer ID Application: Your Name" \
+  SqlServerGUI.app
+
+# Verify signature
+codesign -dvvv SqlServerGUI.app
+```
+
+### App Store Viability Assessment
+
+**Concerns**:
+- App Store guidelines restrict bundled libraries
+- May trigger "embedded code" review
+- Additional documentation required
+
+**Alternatives if App Store Rejection**:
+1. Direct download distribution (recommended initially)
+2. Require users to install FreeTDS via Homebrew
+3. Consider Mac App Store exclusive edition with ODBC instead
+
+**Recommendation**: Start with direct download + bundled FreeTDS, evaluate App Store submission after MVP validation.
+
+## Appendix E: Async/Await Bridging Strategy
+
+### Challenge
+
+FreeTDS is fundamentally synchronous:
+```c
+// FreeTDS blocking calls
+DBPROCESS* dbprocess;
+dbcmd(dbprocess, "SELECT * FROM table");
+dbsqlexec(dbprocess);
+dbresults(dbprocess);
+while (dbnextrow(dbprocess) != NO_MORE_ROWS) {
+    // Process row
+}
+```
+
+Swift expects async/await:
+```swift
+func executeQuery(_ sql: String) async throws -> [Row]
+```
+
+### Solution: Thread-Based Bridging
+
+```swift
+actor SQLServerConnectionManager {
+    private let executor: TaskExecutor
+    
+    init() {
+        // Create dedicated executor for FreeTDS operations
+        self.executor = TaskExecutor(
+            name: "com.sqlservergui.freetds",
+            qos: .userInitiated,
+            threadPriority: 1.0
+        )
+    }
+    
+    func executeQuery(_ sql: String) async throws -> QueryResult {
+        try await withCheckedThrowingContinuation { continuation in
+            executor.execute {
+                do {
+                    // Synchronous FreeTDS calls here
+                    let result = try self.freetdsQuery(sql)
+                    continuation.resume(returning: result)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+    
+    private func freetdsQuery(_ sql: String) throws -> QueryResult {
+        // Unsafe C pointer handling here
+        // Proper cleanup on error paths
+        // No async operations allowed
+    }
+}
+```
+
+### Safety Guarantees
+
+1. **Actor Isolation**: All unsafe operations within actor boundary
+2. **Structured Concurrency**: Swift runtime manages thread lifecycle
+3. **Error Propagation**: C errors converted to Swift errors
+4. **Memory Management**: Defer blocks ensure cleanup
+
+### Performance Implications
+
+- Thread per active query (vs. single thread with SwiftNIO)
+- Context switching overhead
+- Memory: ~512KB per thread stack
+- Mitigation: Limit concurrent queries to 5
+
+## Appendix F: Architecture Decision Records
+
+### ADR-001: FreeTDS vs. Alternatives
+
+**Status**: Accepted  
+**Date**: 2026-03-17  
+**Context**: Need SQL Server connectivity from Swift on macOS  
+**Decision**: Use FreeTDS with Swift C interop wrapper  
+**Consequences**: 
+- + Free, open-source, full feature support
+- + Proven technology with long history
+- - High technical risk (no Swift precedent)
+- - Distribution complexity
+- - Performance overhead vs. native Swift
+
+**Alternatives Considered**: ODBC, commercial drivers, middleware  
+**Revisit Date**: After Phase 0 PoC completion
+
+### ADR-002: Separate Codebase vs. Shared Codebase
+
+**Status**: Accepted  
+**Date**: 2026-03-17  
+**Context**: Should SqlServerGUI share code with PostgresGUI?  
+**Decision**: Separate codebase, copy UI layer  
+**Consequences**:
+- + Faster development (no abstraction overhead)
+- + Database-specific optimizations
+- + Clear separation of concerns
+- - Code duplication
+- - Maintenance burden (two codebases)
+- - Inconsistent fixes possible
+
+**Alternatives Considered**: Shared UI with protocol abstraction, monolithic app with pluggable drivers  
+**Revisit Date**: Never (architectural commitment)
+
+### ADR-003: Direct Distribution vs. App Store
+
+**Status**: Accepted  
+**Date**: 2026-03-17  
+**Context**: Distribution channel for SqlServerGUI  
+**Decision**: Direct download initially, evaluate App Store later  
+**Consequences**:
+- + Full control over updates and pricing
+- + No App Store review delays
+- + Can bundle FreeTDS without restrictions
+- - Reduced discoverability
+- - Manual update process
+- - No App Store featuring
+
+**Alternatives Considered**: Mac App Store exclusive, GitHub Releases + Homebrew Cask  
+**Revisit Date**: After MVP completion
