@@ -15,6 +15,7 @@ import Testing
 final class MockDatabaseService: DatabaseServiceProtocol {
     var isConnected: Bool = false
     var connectedDatabase: String?
+    var metadataService: MetadataServiceProtocol = ConnectionStateMockMetadataService()
 
     func connect(host: String, port: Int, username: String, password: String, database: String, sslMode: SSLMode) async throws {
         isConnected = true
@@ -87,6 +88,18 @@ final class MockDatabaseService: DatabaseServiceProtocol {
     func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] {
         return []
     }
+
+    func fetchAllSchemaMetadata(connection: DatabaseConnectionProtocol) async throws -> [String: [TableInfo]] {
+        return [:]
+    }
+}
+
+@MainActor
+class ConnectionStateMockMetadataService: MetadataServiceProtocol {
+    func fetchDatabases() async throws -> [DatabaseInfo] { return [] }
+    func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { return [] }
+    func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { return [] }
+    func fetchAllSchemaMetadata(databaseId: String) async throws -> [String: [TableInfo]] { return [:] }
 }
 
 // MARK: - ConnectionState Tests

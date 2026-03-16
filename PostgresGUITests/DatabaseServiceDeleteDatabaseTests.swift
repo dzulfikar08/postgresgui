@@ -179,6 +179,10 @@ private final class DeleteDatabaseMockQueryExecutor: QueryExecutorProtocol {
         primaryKeyColumns: [String],
         rows: [TableRow]
     ) async throws {}
+
+    func fetchAllSchemaMetadata(connection: DatabaseConnectionProtocol) async throws -> [String: [TableInfo]] {
+        [:]
+    }
 }
 
 @Suite("DatabaseService.deleteDatabase")

@@ -15,6 +15,7 @@ import Testing
 final class DelayedMockDatabaseService: DatabaseServiceProtocol {
     var isConnected: Bool = true
     var connectedDatabase: String? = "test"
+    var metadataService: MetadataServiceProtocol = DelayedMockMetadataService()
 
     /// Delay before returning query results (for race condition testing)
     var queryDelay: TimeInterval = 0
@@ -86,6 +87,15 @@ final class DelayedMockDatabaseService: DatabaseServiceProtocol {
     func updateRow(schema: String, table: String, primaryKeyColumns: [String], originalRow: TableRow, updatedValues: [String: RowEditValue]) async throws {}
     func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { [] }
     func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { [] }
+    func fetchAllSchemaMetadata(connection: DatabaseConnectionProtocol) async throws -> [String: [TableInfo]] { [:] }
+}
+
+@MainActor
+class DelayedMockMetadataService: MetadataServiceProtocol {
+    func fetchDatabases() async throws -> [DatabaseInfo] { return [] }
+    func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { return [] }
+    func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { return [] }
+    func fetchAllSchemaMetadata(databaseId: String) async throws -> [String: [TableInfo]] { return [:] }
 }
 
 @MainActor

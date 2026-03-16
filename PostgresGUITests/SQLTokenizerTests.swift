@@ -1,4 +1,5 @@
 import Testing
+import AppKit
 @testable import PostgresGUI
 
 @Suite("SQLTokenizer Tests")

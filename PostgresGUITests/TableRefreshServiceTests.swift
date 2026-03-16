@@ -10,9 +10,18 @@ import Testing
 @testable import PostgresGUI
 
 @MainActor
+class MockMetadataServiceForTableRefresh: MetadataServiceProtocol {
+    func fetchDatabases() async throws -> [DatabaseInfo] { return [] }
+    func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { return [] }
+    func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { return [] }
+    func fetchAllSchemaMetadata(databaseId: String) async throws -> [String: [TableInfo]] { return [:] }
+}
+
+@MainActor
 final class TableRefreshMockDatabaseService: DatabaseServiceProtocol {
     var isConnected: Bool = true
     var connectedDatabase: String? = "postgres"
+    var metadataService: MetadataServiceProtocol = MockMetadataServiceForTableRefresh()
 
     var databasesToReturn: [DatabaseInfo] = []
     var tablesToReturnByDatabase: [String: [TableInfo]] = [:]

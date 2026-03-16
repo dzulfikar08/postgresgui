@@ -17,6 +17,7 @@ final class ToolbarRefreshMockDatabaseService: DatabaseServiceProtocol {
     var deleteDatabaseError: Error?
     private(set) var deleteDatabaseCallCount: Int = 0
     private(set) var deleteDatabaseNames: [String] = []
+    var metadataService: MetadataServiceProtocol = ToolbarRefreshMockMetadataService()
 
     func connect(host: String, port: Int, username: String, password: String, database: String, sslMode: SSLMode) async throws {
         isConnected = true
@@ -56,6 +57,15 @@ final class ToolbarRefreshMockDatabaseService: DatabaseServiceProtocol {
     func updateRow(schema: String, table: String, primaryKeyColumns: [String], originalRow: TableRow, updatedValues: [String : RowEditValue]) async throws {}
     func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { [] }
     func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { [] }
+    func fetchAllSchemaMetadata(connection: DatabaseConnectionProtocol) async throws -> [String: [TableInfo]] { [:] }
+}
+
+@MainActor
+class ToolbarRefreshMockMetadataService: MetadataServiceProtocol {
+    func fetchDatabases() async throws -> [DatabaseInfo] { return [] }
+    func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { return [] }
+    func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { return [] }
+    func fetchAllSchemaMetadata(databaseId: String) async throws -> [String: [TableInfo]] { return [:] }
 }
 
 @MainActor
