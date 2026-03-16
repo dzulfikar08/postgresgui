@@ -637,53 +637,60 @@ protocol CompletionCacheProtocol {
 
 - [ ] **Step 2: Write tests for CompletionCache**
 
-Create test file: `PostgresGUITests/Services/CompletionCacheTests.swift`
+Create test file: `PostgresGUITests/CompletionCacheTests.swift`
+
+Note: Project uses Swift Testing framework, not XCTest.
 
 ```swift
-import XCTest
+import Testing
 @testable import PostgresGUI
 
-final class CompletionCacheTests: XCTestCase {
-    var cache: CompletionCache!
+@Suite("CompletionCache Tests")
+struct CompletionCacheTests {
+    var cache: CompletionCache
+    var mockAppState: AppState
 
-    override func setUp() {
-        super.setUp()
-        cache = CompletionCache(metadataService: MockMetadataService())
+    init() {
+        // Create a minimal app state for testing
+        mockAppState = AppState()
+        let mockService = MockMetadataService()
+        cache = CompletionCache(metadataService: mockService, appState: mockAppState)
     }
 
-    func testGetTablesReturnsCached() async throws {
-        // Setup mock data
-        let tables = [
-            TableInfo(name: "users", schema: "public"),
-            TableInfo(name: "posts", schema: "public")
-        ]
-
+    @Test("Get tables returns cached metadata")
+    func getTablesReturnsCached() async throws {
         // Load metadata
         try await cache.loadMetadata(forDatabase: "testdb")
 
         // Verify tables are cached
         let cachedTables = cache.getTables(forDatabase: "testdb")
-        XCTAssertNotNil(cachedTables)
+        #expect(cachedTables != nil)
+        #expect(cachedTables?.count == 1)
+        #expect(cachedTables?.first?.name == "users")
     }
 
-    func testInvalidateDatabaseClearsCache() async throws {
+    @Test("Invalidate database clears cache")
+    func invalidateDatabaseClearsCache() async throws {
         try await cache.loadMetadata(forDatabase: "testdb")
-        XCTAssertNotNil(cache.getTables(forDatabase: "testdb"))
+        #expect(cache.getTables(forDatabase: "testdb") != nil)
 
         cache.invalidateDatabase("testdb")
-        XCTAssertNil(cache.getTables(forDatabase: "testdb"))
+        #expect(cache.getTables(forDatabase: "testdb") == nil)
     }
 
-    func testGetColumnsForTable() async throws {
+    @Test("Get columns for table returns column info")
+    func getColumnsForTable() async throws {
         try await cache.loadMetadata(forDatabase: "testdb")
 
         let columns = cache.getColumns(forTable: "users", inSchema: "public")
-        XCTAssertNotNil(columns)
+        #expect(columns != nil)
+        #expect(columns?.count == 2)
+        #expect(columns?.first?.name == "id")
     }
 }
 
 // Mock metadata service for testing
-class MockMetadataService: MetadataServiceProtocol {
+actor MockMetadataService: MetadataServiceProtocol {
     func fetchDatabases() async throws -> [DatabaseInfo] { return [] }
     func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { return [] }
     func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { return [] }
@@ -731,8 +738,11 @@ class CompletionCache: CompletionCacheProtocol {
     /// Track loading state to prevent duplicate fetches
     private var loadingDatabases: Set<String> = []
 
-    init(metadataService: MetadataServiceProtocol) {
+    private let appState: AppState
+
+    init(metadataService: MetadataServiceProtocol, appState: AppState) {
         self.metadataService = metadataService
+        self.appState = appState
     }
 
     /// Get all tables for a database
@@ -744,7 +754,8 @@ class CompletionCache: CompletionCacheProtocol {
     /// Get columns for a specific table
     func getColumns(forTable tableName: String, inSchema schema: String) -> [ColumnInfo]? {
         guard let connectionId = getCurrentConnectionId() else { return nil }
-        return cache[connectionId]?[databaseId(for: tableName)]?[schema]?.first { $0.name == tableName }?.columnInfo
+        guard let databaseId = getCurrentDatabaseId() else { return nil }
+        return cache[connectionId]?[databaseId]?[schema]?.first { $0.name == tableName }?.columnInfo
     }
 
     /// Invalidate cache for a specific database
@@ -783,13 +794,11 @@ class CompletionCache: CompletionCacheProtocol {
     // MARK: - Private Helpers
 
     private func getCurrentConnectionId() -> String? {
-        // TODO: Get from AppState/ConnectionState
-        return "default"
+        return appState.connection.currentConnectionId
     }
 
-    private func databaseId(for table: String) -> String {
-        // TODO: Get current database ID from context
-        return "default"
+    private func getCurrentDatabaseId() -> String? {
+        return appState.connection.selectedDatabase?.id
     }
 
     private func makeCacheKey(databaseId: String) -> String {
@@ -807,14 +816,15 @@ Expected: PASS (after fixing any compilation issues)
 - [ ] **Step 6: Commit**
 
 ```bash
-git add PostgresGUI/Services/CompletionCache.swift PostgresGUI/Services/Protocols/CompletionCacheProtocol.swift PostgresGUITests/Services/CompletionCacheTests.swift
+git add PostgresGUI/Services/CompletionCache.swift PostgresGUI/Services/Protocols/CompletionCacheProtocol.swift PostgresGUITests/CompletionCacheTests.swift
 git commit -m "feat: add CompletionCache for metadata storage
 
 - Implement cache structure: [connectionId: [databaseId: [schema: [TableInfo]]]]
 - Add methods: getTables, getColumns, invalidateDatabase, loadMetadata
 - Add loading state tracking to prevent duplicate fetches
-- Add unit tests with mock metadata service
+- Add unit tests with mock metadata service using Swift Testing
 - @MainActor isolation for thread safety
+- Integrate with AppState for connection/database tracking
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ```
@@ -827,54 +837,78 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `PostgresGUI/Utilities/SQLTokenizer.swift`
-- Create: `PostgresGUITests/Utilities/SQLTokenizerTests.swift`
+- Create: `PostgresGUITests/SQLTokenizerTests.swift`
 
 - [ ] **Step 1: Write tests for SQLTokenizer**
 
-Create test file: `PostgresGUITests/Utilities/SQLTokenizerTests.swift`
+Create test file: `PostgresGUITests/SQLTokenizerTests.swift`
+
+Note: Project uses Swift Testing framework, not XCTest.
 
 ```swift
-import XCTest
+import Testing
 @testable import PostgresGUI
 
-final class SQLTokenizerTests: XCTestCase {
-    var tokenizer: SQLTokenizer!
+@Suite("SQLTokenizer Tests")
+struct SQLTokenizerTests {
+    var tokenizer: SQLTokenizer
 
-    override func setUp() {
-        super.setUp()
+    init() {
         tokenizer = SQLTokenizer()
     }
 
-    func testTokenizeSimpleSelect() {
+    @Test("Tokenize simple SELECT statement")
+    func tokenizeSimpleSelect() {
         let tokens = tokenizer.tokenize("SELECT * FROM users")
-        XCTAssertTrue(tokens.contains(.keyword("SELECT")))
-        XCTAssertTrue(tokens.contains(.identifier("*")))
-        XCTAssertTrue(tokens.contains(.keyword("FROM")))
-        XCTAssertTrue(tokens.contains(.identifier("users")))
+        #expect(tokens.contains(.keyword("SELECT")))
+        #expect(tokens.contains(.identifier("*")))
+        #expect(tokens.contains(.keyword("FROM")))
+        #expect(tokens.contains(.identifier("users")))
     }
 
-    func testTokenizeWithWhitespace() {
+    @Test("Tokenize with whitespace")
+    func tokenizeWithWhitespace() {
         let tokens = tokenizer.tokenize("SELECT   id")
-        XCTAssertTrue(tokens.contains(.keyword("SELECT")))
-        XCTAssertTrue(tokens.contains(.whitespace))
-        XCTAssertTrue(tokens.contains(.identifier("id")))
+        #expect(tokens.contains(.keyword("SELECT")))
+        #expect(tokens.contains(.whitespace))
+        #expect(tokens.contains(.identifier("id")))
     }
 
-    func testTokenizeStringLiteral() {
+    @Test("Tokenize string literal")
+    func tokenizeStringLiteral() {
         let tokens = tokenizer.tokenize("WHERE name = 'test'")
-        XCTAssertTrue(tokens.contains(.stringLiteral("'test'")))
+        #expect(tokens.contains(.stringLiteral("'test'")))
     }
 
-    func testDetectContextInSelectClause() {
-        let sql = "SELECT us|"
-        let context = tokenizer.getContext(at: NSRange(location: 9, length: 0), inText: sql.replacingOccurrences(of: "|", with: ""))
-        XCTAssertEqual(context, .selectClause)
+    @Test("Detect context in SELECT clause")
+    func detectContextInSelectClause() {
+        // "SELECT id FRO" - cursor at position 9 (after "FRO")
+        let sql = "SELECT id FRO"
+        let context = tokenizer.getContext(at: NSRange(location: 9, length: 0), inText: sql)
+        #expect(context == .selectClause)
     }
 
-    func testDetectContextInFromClause() {
-        let sql = "FROM use|"
-        let context = tokenizer.getContext(at: NSRange(location: 5, length: 0), inText: sql.replacingOccurrences(of: "|", with: ""))
-        XCTAssertEqual(context, .fromClause)
+    @Test("Detect context in FROM clause")
+    func detectContextInFromClause() {
+        // "FROM use" - cursor at position 7 (after "use")
+        let sql = "FROM use"
+        let context = tokenizer.getContext(at: NSRange(location: 7, length: 0), inText: sql)
+        #expect(context == .fromClause)
+    }
+
+    @Test("Detect context in WHERE clause")
+    func detectContextInWhereClause() {
+        // "WHERE id =" - cursor at position 9 (after "=")
+        let sql = "WHERE id ="
+        let context = tokenizer.getContext(at: NSRange(location: 9, length: 0), inText: sql)
+        #expect(context == .whereClause)
+    }
+
+    @Test("Detect default context when no keywords")
+    func detectDefaultContext() {
+        let sql = "just text"
+        let context = tokenizer.getContext(at: NSRange(location: 5, length: 0), inText: sql)
+        #expect(context == .defaultContext)
     }
 }
 ```
@@ -1068,13 +1102,14 @@ Expected: PASS (after fixing any compilation or logic issues)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add PostgresGUI/Utilities/SQLTokenizer.swift PostgresGUITests/Utilities/SQLTokenizerTests.swift
+git add PostgresGUI/Utilities/SQLTokenizer.swift PostgresGUITests/SQLTokenizerTests.swift
 git commit -m "feat: add SQLTokenizer for parsing and context detection
 
 - Implement tokenize() to parse SQL into tokens
 - Implement getContext() to detect cursor context (SELECT, FROM, WHERE, etc.)
 - Handle keywords, identifiers, operators, strings, dots, commas
-- Add unit tests for tokenization and context detection
+- Add unit tests using Swift Testing framework
+- Add test for default context detection
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ```
@@ -1088,7 +1123,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 **Files:**
 - Create: `PostgresGUI/Services/SQLCompletionService.swift`
 - Create: `PostgresGUI/Services/Protocols/SQLCompletionServiceProtocol.swift`
-- Create: `PostgresGUITests/Services/SQLCompletionServiceTests.swift`
+- Create: `PostgresGUITests/SQLCompletionServiceTests.swift`
 
 - [ ] **Step 1: Write protocol**
 
@@ -1124,67 +1159,106 @@ protocol SQLCompletionServiceProtocol {
 
 - [ ] **Step 2: Write tests**
 
-Create test file: `PostgresGUITests/Services/SQLCompletionServiceTests.swift`
+Create test file: `PostgresGUITests/SQLCompletionServiceTests.swift`
+
+Note: Project uses Swift Testing framework, not XCTest.
 
 ```swift
-import XCTest
+import Testing
 @testable import PostgresGUI
 
-final class SQLCompletionServiceTests: XCTestCase {
-    var service: SQLCompletionService!
-    var mockCache: MockCompletionCache!
+@Suite("SQLCompletionService Tests")
+struct SQLCompletionServiceTests {
+    var service: SQLCompletionService
+    var mockCache: MockCompletionCache
+    var mockAppState: AppState
 
-    override func setUp() {
-        super.setUp()
+    init() {
+        mockAppState = AppState()
         mockCache = MockCompletionCache()
-        service = SQLCompletionService(cache: mockCache, tokenizer: SQLTokenizer())
+        let tokenizer = SQLTokenizer()
+        service = SQLCompletionService(cache: mockCache, tokenizer: tokenizer)
     }
 
-    func testGetCompletionsInFromClause() {
-        mockCache.tables = [
-            TableInfo(name: "users", schema: "public"),
-            TableInfo(name: "posts", schema: "public")
+    @Test("Get completions in FROM clause returns tables")
+    func getCompletionsInFromClause() {
+        // Setup mock data
+        let tables = [
+            TableInfo(name: "users", schema: "public", tableType: .regular),
+            TableInfo(name: "posts", schema: "public", tableType: .regular)
         ]
+        mockCache.setTables(tables, forDatabase: "testdb")
 
         let suggestions = service.getCompletions(for: "us", inContext: .fromClause)
 
-        XCTAssertTrue(suggestions.contains { $0.text == "users" })
-        XCTAssertFalse(suggestions.contains { $0.text == "posts" })
+        #expect(suggestions.contains { $0.text == "users" })
+        #expect(!suggestions.contains { $0.text == "posts" })
     }
 
-    func testGetCompletionsInSelectClause() {
-        mockCache.columns = [
+    @Test("Get completions in SELECT clause returns columns")
+    func getCompletionsInSelectClause() {
+        // Setup mock columns
+        let columns = [
             ColumnInfo(name: "id", dataType: "integer"),
             ColumnInfo(name: "username", dataType: "text")
         ]
+        mockCache.setColumns(columns)
 
         let suggestions = service.getCompletions(for: "use", inContext: .selectClause)
 
-        XCTAssertTrue(suggestions.contains { $0.text == "username" })
+        #expect(suggestions.contains { $0.text == "username" })
     }
 
-    func testDetectContext() {
+    @Test("Detect context works correctly")
+    func detectContext() {
         let context = service.detectContext(at: NSRange(location: 9, length: 0), inText: "SELECT id FR")
-        XCTAssertEqual(context, .selectClause)
+        #expect(context == .selectClause)
     }
 
-    func testFuzzyMatching() {
-        mockCache.tables = [
-            TableInfo(name: "users", schema: "public")
+    @Test("Fuzzy matching works with typos")
+    func fuzzyMatching() {
+        let tables = [
+            TableInfo(name: "users", schema: "public", tableType: .regular)
         ]
+        mockCache.setTables(tables, forDatabase: "testdb")
 
         let suggestions = service.getCompletions(for: "usr", inContext: .fromClause)
 
         // Should match with fuzzy scoring
-        XCTAssertFalse(suggestions.isEmpty)
-        XCTAssertTrue(suggestions.allSatisfy { $0.relevanceScore > 0 })
+        #expect(!suggestions.isEmpty)
+        #expect(suggestions.allSatisfy { $0.relevanceScore > 0 })
     }
 }
 
-// Mock cache for testing
-class MockCompletionCache {
-    var tables: [TableInfo] = []
-    var columns: [ColumnInfo] = []
+// Mock cache for testing - conforms to protocol
+actor MockCompletionCache: CompletionCacheProtocol {
+    private var tables: [TableInfo] = []
+    private var columns: [ColumnInfo] = []
+
+    func setTables(_ tables: [TableInfo], forDatabase databaseId: String) {
+        self.tables = tables
+    }
+
+    func setColumns(_ columns: [ColumnInfo]) {
+        self.columns = columns
+    }
+
+    func getTables(forDatabase databaseId: String) -> [TableInfo]? {
+        return tables.isEmpty ? nil : tables
+    }
+
+    func getColumns(forTable tableName: String, inSchema schema: String) -> [ColumnInfo]? {
+        return columns.isEmpty ? nil : columns
+    }
+
+    func invalidateDatabase(_ databaseId: String) {
+        tables = []
+        columns = []
+    }
+
+    func loadMetadata(forDatabase databaseId: String) async throws {
+        // No-op for mock
+    }
 }
 ```
 
@@ -1422,7 +1496,7 @@ Expected: PASS (after fixing any compilation or logic issues)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add PostgresGUI/Services/SQLCompletionService.swift PostgresGUI/Services/Protocols/SQLCompletionServiceProtocol.swift PostgresGUITests/Services/SQLCompletionServiceTests.swift
+git add PostgresGUI/Services/SQLCompletionService.swift PostgresGUI/Services/Protocols/SQLCompletionServiceProtocol.swift PostgresGUITests/SQLCompletionServiceTests.swift
 git commit -m "feat: add SQLCompletionService for suggestions
 
 - Implement getCompletions() with context-aware filtering
@@ -1430,7 +1504,7 @@ git commit -m "feat: add SQLCompletionService for suggestions
 - Add fuzzy matching algorithm (exact, prefix, skip, fuzzy)
 - Add Levenshtein distance for fuzzy scoring
 - Support table, column, and keyword completions
-- Add unit tests with mock cache
+- Add unit tests using Swift Testing framework with protocol-conforming mock
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ```
@@ -1453,8 +1527,8 @@ Add to the Coordinator class in SyntaxHighlightedEditor.swift:
 
 private let completionService: SQLCompletionServiceProtocol?
 private var completionTimer: DispatchWorkItem?
-private var lastPartialWord: String = ""
-private var lastContext: SQLContext = .defaultContext
+private var currentCompletions: [CompletionSuggestion] = []
+private var manualTriggerRequested = false
 
 // Update init to accept service (optional to maintain compatibility):
 
@@ -1462,6 +1536,14 @@ init(parent: SyntaxHighlightedEditor, completionService: SQLCompletionServicePro
     self.parent = parent
     self.completionService = completionService
     self.lastIsDark = parent.colorScheme == .dark
+}
+
+// Add manual trigger method (can be called from view layer):
+
+func triggerCompletionManually() {
+    manualTriggerRequested = true
+    triggerCompletion()
+    manualTriggerRequested = false
 }
 
 // Add completion trigger method:
@@ -1478,7 +1560,8 @@ private func triggerCompletion() {
     let text = textView.string as NSString
     let partialWord = getPartialWord(at: selectedRange.location, in: text)
 
-    guard partialWord.count >= 2 else { return } // Need at least 2 characters
+    // Trigger immediately if manually requested, otherwise require 2+ characters
+    guard manualTriggerRequested || partialWord.count >= 2 else { return }
 
     // Detect context
     let context = service.detectContext(at: selectedRange, inText: text as String)
@@ -1488,8 +1571,11 @@ private func triggerCompletion() {
 
     guard !suggestions.isEmpty else { return }
 
-    // Show completion popup
-    showCompletionPopup(suggestions: suggestions, for: partialWord)
+    // Store completions for delegate method
+    self.currentCompletions = suggestions
+
+    // Trigger NSTextView's completion UI
+    textView.complete(nil)
 }
 
 private func getPartialWord(at location: Int, in text: NSString) -> String {
@@ -1505,28 +1591,13 @@ private func getPartialWord(at location: Int, in text: NSString) -> String {
     return text.substring(with: NSRange(location: start, length: location - start))
 }
 
-private func showCompletionPopup(suggestions: [CompletionSuggestion], for partialWord: String) {
-    guard let textView = textView else { return }
-
-    // NSTextView will handle the completion popup
-    // We need to provide the completion strings
-    let completionStrings = suggestions.map { $0.text }
-
-    // Trigger completion
-    textView.complete(with: completionStrings)
-}
-
 // Add NSTextViewDelegate method for completions:
 
-func textView(_ textView: NSTextView, completions: [String], forPartialWordRange charRange: NSRange, indexOfSelectedItem index: UnsafeMutablePointer<Int>) -> [String]? {
-    guard let service = completionService else { return nil }
+func textView(_ textView: NSTextView, completions words: [String], forPartialWordRange charRange: NSRange, indexOfSelectedItem index: UnsafeMutablePointer<Int>) -> [String]? {
+    guard !currentCompletions.isEmpty else { return nil }
 
-    let text = textView.string as NSString
-    let partialWord = text.substring(with: charRange)
-    let context = service.detectContext(at: charRange, inText: text as String)
-
-    let suggestions = service.getCompletions(for: partialWord, inContext: context)
-    return suggestions.map { $0.text }
+    // Return completion texts for display
+    return currentCompletions.map { $0.text }
 }
 ```
 
@@ -1569,24 +1640,11 @@ func textDidChange(_ notification: Notification) {
 
 - [ ] **Step 3: Add Ctrl+Space keyboard handler**
 
-Add to Coordinator:
+Note: Ctrl+Space handling will be added in Chunk 8 (Task 10) when connecting the view model. The Coordinator's `triggerCompletionManually()` method will be called from the view layer using a menu item or keyboard equivalent.
 
-```swift
-// Override key down event to catch Ctrl+Space
-
-override func responds(to aSelector: Selector!) -> Bool {
-    if aSelector == #selector(NSTextView.completions(forPartialWordRange:indexOfSelectedItem:)) {
-        return true
-    }
-    return super.responds(to: aSelector)
-}
-
-// Add method to handle manual trigger
-
-@objc func triggerCompletionManually() {
-    triggerCompletion()
-}
-```
+For now, the completion system supports:
+- Automatic trigger after 300ms debounce (Step 2)
+- Manual trigger via `triggerCompletionManually()` method (to be wired up in Chunk 8)
 
 - [ ] **Step 4: Test integration**
 
@@ -1661,10 +1719,21 @@ struct QueryEditorView: View {
     }
 
     private func setupCompletionServices() {
-        let metadataService = // get from appState or create
+        // Get metadata service from connection state
+        let metadataService = MetadataService(
+            connectionManager: appState.connection.connectionManager,
+            queryExecutor: appState.connection.queryExecutor
+        )
+
         tokenizer = SQLTokenizer()
-        completionCache = CompletionCache(metadataService: metadataService)
-        completionService = SQLCompletionService(cache: completionCache!, tokenizer: tokenizer!)
+        completionCache = CompletionCache(
+            metadataService: metadataService,
+            appState: appState
+        )
+        completionService = SQLCompletionService(
+            cache: completionCache!,
+            tokenizer: tokenizer!
+        )
 
         Task {
             await loadCompletionMetadata()
@@ -1717,6 +1786,27 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
     }
 }
 ```
+
+- [ ] **Step 3b: Add Ctrl+Space keyboard shortcut**
+
+Add to QueryEditorComponent toolbar, before the Run Query button:
+
+```swift
+// Add keyboard shortcut for manual completion
+Button(action: {
+    // Trigger completion via coordinator
+    // This will be implemented by accessing the editor's coordinator
+}) {
+    Image(systemName: "text.magnifyingglass")
+}
+.buttonStyle(.glass)
+.clipShape(Circle())
+.tint(.blue)
+.keyboardShortcut(" ", modifiers: [.control])
+.help("Show completions (Ctrl+Space)")
+```
+
+Note: The actual completion trigger will need to be implemented by accessing the SyntaxHighlightedEditor's coordinator. This can be done by adding a coordinator reference to the editor view or by using NSView's `nextResponder` chain. For now, the keyboard shortcut placeholder is shown.
 
 - [ ] **Step 4: Test end-to-end**
 
