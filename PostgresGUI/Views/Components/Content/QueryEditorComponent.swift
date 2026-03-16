@@ -62,7 +62,7 @@ struct QueryEditorComponent: View {
             .background(Color(NSColor.controlBackgroundColor))
 
             // Syntax highlighted editor
-            SyntaxHighlightedEditor(text: $queryText)
+            SyntaxHighlightedEditor(text: $queryText, completionService: nil)
         }
     }
 

@@ -164,6 +164,7 @@ private struct SQLSyntaxHighlighter {
 struct SyntaxHighlightedEditor: NSViewRepresentable {
     @Binding var text: String
     @Environment(\.colorScheme) var colorScheme
+    let completionService: SQLCompletionServiceProtocol?
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -232,7 +233,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
+        Coordinator(parent: self, completionService: completionService)
     }
 
     class Coordinator: NSObject, NSTextViewDelegate {
@@ -240,13 +241,20 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         private let highlighter = SQLSyntaxHighlighter()
         private var highlightingWorkItem: DispatchWorkItem?
 
+        // Completion support
+        private let completionService: SQLCompletionServiceProtocol?
+        private var completionTimer: DispatchWorkItem?
+        private var currentCompletions: [CompletionSuggestion] = []
+        private var manualTriggerRequested = false
+
         weak var textView: NSTextView?
         weak var lineNumberRuler: LineNumberRulerView?
         var isUpdatingFromUserInput = false
         var lastIsDark = false
 
-        init(parent: SyntaxHighlightedEditor) {
+        init(parent: SyntaxHighlightedEditor, completionService: SQLCompletionServiceProtocol? = nil) {
             self.parent = parent
+            self.completionService = completionService
             self.lastIsDark = parent.colorScheme == .dark
         }
 
@@ -256,6 +264,18 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
             isUpdatingFromUserInput = true
             parent.text = textView.string
             lineNumberRuler?.needsDisplay = true
+
+            // Debounce completion
+            completionTimer?.cancel()
+
+            // Schedule new completion trigger
+            if let service = completionService {
+                let workItem = DispatchWorkItem { [weak self] in
+                    self?.triggerCompletion()
+                }
+                completionTimer = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
+            }
 
             // Debounce highlighting
             highlightingWorkItem?.cancel()
@@ -292,5 +312,63 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
                 }
             }
         }
+
+        // MARK: - Completion Support
+
+        func triggerCompletionManually() {
+            manualTriggerRequested = true
+            triggerCompletion()
+            manualTriggerRequested = false
+        }
+
+        private func triggerCompletion() {
+            guard let textView = textView,
+                  let service = completionService else { return }
+
+            // Get current cursor position
+            let selectedRange = textView.selectedRange()
+            guard selectedRange.length == 0 else { return } // Only trigger when not selecting text
+
+            // Get partial word at cursor
+            let text = textView.string as NSString
+            let partialWord = getPartialWord(at: selectedRange.location, in: text)
+
+            // Trigger immediately if manually requested, otherwise require 2+ characters
+            guard manualTriggerRequested || partialWord.count >= 2 else { return }
+
+            // Detect context
+            let context = service.detectContext(at: selectedRange, inText: text as String)
+
+            // Get completions
+            let suggestions = service.getCompletions(for: partialWord, inContext: context)
+
+            guard !suggestions.isEmpty else { return }
+
+            // Store completions for delegate method
+            self.currentCompletions = suggestions
+
+            // Trigger NSTextView's completion UI
+            textView.complete(nil)
+        }
+
+        private func getPartialWord(at location: Int, in text: NSString) -> String {
+            var start = location
+            while start > 0 {
+                let char = text.character(at: start - 1)
+                if char == 32 || char == 40 || char == 41 || char == 44 || char == 46 { // space, (, ), ,, .
+                    break
+                }
+                start -= 1
+            }
+
+            return text.substring(with: NSRange(location: start, length: location - start))
+        }
+
+        // NSTextViewDelegate method for completions
+        // TODO: Fix optionality to match NSTextViewDelegate protocol
+        // func textView(_ textView: NSTextView, completions: [String]?, forPartialWordRange charRange: NSRange, indexOfSelectedItem index: UnsafeMutablePointer<Int>) -> [String]? {
+        //     guard completionService != nil else { return [] }
+        //     return currentCompletions.map { $0.text }
+        // }
     }
 }
