@@ -50,7 +50,6 @@ class CompletionCache: CompletionCacheProtocol {
     func loadMetadata(forDatabase databaseId: String) async throws {
         let cacheKey = makeCacheKey(databaseId: databaseId)
 
-        // Prevent duplicate loading
         guard !loadingDatabases.contains(cacheKey) else {
             logger.debug("Already loading database: \(databaseId)")
             return
@@ -59,17 +58,22 @@ class CompletionCache: CompletionCacheProtocol {
         loadingDatabases.insert(cacheKey)
         defer { loadingDatabases.remove(cacheKey) }
 
-        // Fetch metadata
-        let schemaMetadata = try await metadataService.fetchAllSchemaMetadata(databaseId: databaseId)
+        do {
+            // Fetch metadata
+            let schemaMetadata = try await metadataService.fetchAllSchemaMetadata(databaseId: databaseId)
 
-        // Store in cache
-        let connectionId = getCurrentConnectionId() ?? "default"
-        if cache[connectionId] == nil {
-            cache[connectionId] = [:]
+            // Store in cache
+            let connectionId = getCurrentConnectionId() ?? "default"
+            if cache[connectionId] == nil {
+                cache[connectionId] = [:]
+            }
+            cache[connectionId]?[databaseId] = schemaMetadata
+
+            logger.debug("Loaded metadata for database: \(databaseId), schemas: \(schemaMetadata.keys.count)")
+        } catch {
+            logger.error("Failed to load metadata for database: \(databaseId), error: \(error)")
+            // Don't throw - allow app to continue with keyword-only completions
         }
-        cache[connectionId]?[databaseId] = schemaMetadata
-
-        logger.debug("Loaded metadata for database: \(databaseId), schemas: \(schemaMetadata.keys.count)")
     }
 
     // MARK: - Private Helpers
