@@ -68,4 +68,5 @@ fastlane/test_output
 .repos
 .claude
 .cursor
+.worktrees
 
