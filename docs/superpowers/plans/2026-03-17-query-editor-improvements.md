@@ -114,6 +114,31 @@ Update variable references throughout the file:
 - `topPaneHeight` → `editorPaneHeight` (tracks the editor pane height)
 - `topPaneView` → `resultsPaneView` (this computed view shows query results)
 
+- [ ] **Step 3b: Rename PreferenceKey structs**
+
+At the bottom of the file (after the body), rename the PreferenceKey structs to match:
+
+```swift
+// Before:
+struct TopPaneHeightKey: PreferenceKey { ... }
+struct BottomPaneHeightKey: PreferenceKey { ... }
+
+// After:
+struct EditorPaneHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+struct ResultsPaneHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+```
+
 - [ ] **Step 4: Test the layout change**
 
 Run: Build and run the app
