@@ -18,4 +18,10 @@ protocol MetadataServiceProtocol {
 
     /// Fetch column information for a table
     func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo]
+
+    /// Fetch all schema metadata for a database (tables and their columns)
+    /// Used by auto-completion cache to populate suggestions
+    /// - Parameter databaseId: The database identifier
+    /// - Returns: Dictionary keyed by schema name, containing tables with their column info
+    func fetchAllSchemaMetadata(databaseId: String) async throws -> [String: [TableInfo]]
 }
