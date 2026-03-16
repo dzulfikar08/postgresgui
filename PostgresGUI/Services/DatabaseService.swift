@@ -19,11 +19,17 @@ class DatabaseService {
 
     // Specialized services (lazy to avoid circular dependencies)
     private lazy var tableService = TableService(connectionManager: connectionManager, queryExecutor: queryExecutor)
-    private lazy var metadataService = MetadataService(connectionManager: connectionManager, queryExecutor: queryExecutor)
+    lazy var _metadataService = MetadataService(connectionManager: connectionManager, queryExecutor: queryExecutor)
     private lazy var databaseManagementService = DatabaseManagementService(
         connectionManager: connectionManager,
         queryExecutor: queryExecutor
     )
+
+    // MARK: - Public Service Accessors
+
+    var metadataService: MetadataServiceProtocol {
+        _metadataService
+    }
 
     // MARK: - Connection State
 
@@ -151,7 +157,7 @@ class DatabaseService {
             throw ConnectionError.notConnected
         }
 
-        return try await metadataService.fetchDatabases()
+        return try await _metadataService.fetchDatabases()
     }
 
     /// Create a new database
@@ -399,7 +405,7 @@ class DatabaseService {
             throw ConnectionError.notConnected
         }
 
-        return try await metadataService.fetchPrimaryKeyColumns(schema: schema, table: table)
+        return try await _metadataService.fetchPrimaryKeyColumns(schema: schema, table: table)
     }
 
     /// Fetch column information for a table
@@ -408,7 +414,7 @@ class DatabaseService {
             throw ConnectionError.notConnected
         }
 
-        return try await metadataService.fetchColumnInfo(schema: schema, table: table)
+        return try await _metadataService.fetchColumnInfo(schema: schema, table: table)
     }
 
     // MARK: - Row Operations

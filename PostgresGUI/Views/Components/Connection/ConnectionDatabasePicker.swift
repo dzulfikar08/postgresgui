@@ -203,9 +203,17 @@ struct ConnectionDatabasePicker: View {
     }
 }
 
+private final class PreviewMetadataService: MetadataServiceProtocol {
+    func fetchDatabases() async throws -> [DatabaseInfo] { [] }
+    func fetchPrimaryKeyColumns(schema: String, table: String) async throws -> [String] { [] }
+    func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo] { [] }
+    func fetchAllSchemaMetadata(databaseId: String) async throws -> [String: [TableInfo]] { [:] }
+}
+
 private final class PreviewDatabaseService: DatabaseServiceProtocol {
     var isConnected: Bool { true }
     var connectedDatabase: String? { "postgres" }
+    var metadataService: MetadataServiceProtocol { PreviewMetadataService() }
 
     func connect(
         host: String,

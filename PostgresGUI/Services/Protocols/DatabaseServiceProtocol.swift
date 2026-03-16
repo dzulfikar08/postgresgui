@@ -106,6 +106,9 @@ protocol DatabaseServiceProtocol: AnyObject {
 
     /// Fetch column information for a table
     func fetchColumnInfo(schema: String, table: String) async throws -> [ColumnInfo]
+
+    /// Metadata service for schema operations
+    var metadataService: MetadataServiceProtocol { get }
 }
 
 // MARK: - DatabaseService Conformance

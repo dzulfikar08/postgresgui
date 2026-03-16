@@ -14,13 +14,15 @@ struct QueryEditorComponent: View {
     let statusMessage: String?
     let lastExecutedAt: Date?
     let displayedElapsedTime: TimeInterval
-    
+
     // Bindings
     @Binding var queryText: String
-    
+
     // Callbacks
     let onRunQuery: () -> Void
     let onCancelQuery: () -> Void
+
+    let completionService: SQLCompletionServiceProtocol?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -62,7 +64,7 @@ struct QueryEditorComponent: View {
             .background(Color(NSColor.controlBackgroundColor))
 
             // Syntax highlighted editor
-            SyntaxHighlightedEditor(text: $queryText, completionService: nil)
+            SyntaxHighlightedEditor(text: $queryText, completionService: completionService)
         }
     }
 

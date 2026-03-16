@@ -14,6 +14,10 @@ struct QueryEditorView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel: QueryEditorViewModel?
 
+    @State private var completionCache: CompletionCache?
+    @State private var completionService: SQLCompletionService?
+    @State private var tokenizer: SQLTokenizer?
+
     /// Check if the current query (for this saved query) is executing
     private var isCurrentQueryExecuting: Bool {
         if let currentSavedQueryId = appState.query.currentSavedQueryId {
@@ -48,7 +52,8 @@ struct QueryEditorView: View {
             onCancelQuery: {
                 tabManager.activeTab?.cancelQuery()
                 appState.query.cancelCurrentQuery()
-            }
+            },
+            completionService: completionService
         )
         .onAppear {
             viewModel = QueryEditorViewModel(
@@ -56,6 +61,15 @@ struct QueryEditorView: View {
                 tabManager: tabManager,
                 modelContext: modelContext
             )
+
+            // Initialize completion services
+            setupCompletionServices()
+        }
+        .onChange(of: appState.connection.selectedDatabase) { oldValue, newValue in
+            // Reload completion cache when database changes
+            Task {
+                await loadCompletionMetadata()
+            }
         }
         .alert("No Database Selected", isPresented: Binding(
             get: { viewModel?.showNoDatabaseAlert ?? false },
@@ -93,5 +107,31 @@ struct QueryEditorView: View {
         .onChange(of: appState.query.queryText) { _, newText in
             viewModel?.handleQueryTextChange(newText)
         }
+    }
+
+    // MARK: - Completion Services Setup
+
+    private func setupCompletionServices() {
+        // Get metadata service from database service
+        let metadataService = appState.connection.databaseService.metadataService
+
+        tokenizer = SQLTokenizer()
+        completionCache = CompletionCache(
+            metadataService: metadataService,
+            appState: appState
+        )
+        completionService = SQLCompletionService(
+            cache: completionCache!,
+            tokenizer: tokenizer!
+        )
+
+        Task {
+            await loadCompletionMetadata()
+        }
+    }
+
+    private func loadCompletionMetadata() async {
+        guard let databaseId = appState.connection.selectedDatabase?.id else { return }
+        try? await completionCache?.loadMetadata(forDatabase: databaseId)
     }
 }
