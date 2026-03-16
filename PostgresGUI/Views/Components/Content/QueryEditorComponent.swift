@@ -28,6 +28,14 @@ struct QueryEditorComponent: View {
         VStack(spacing: 0) {
             // Toolbar with execute/cancel button and stats
             HStack(spacing: 0) {
+                // Completion indicator
+                if completionService != nil {
+                    Image(systemName: "circlebadge.fill")
+                        .font(.system(size: 8))
+                        .foregroundColor(.green)
+                        .help("Auto-completion enabled (Ctrl+Space)")
+                }
+
                 // Always show Run Query button
                 Button(action: onRunQuery) {
                     Label {
