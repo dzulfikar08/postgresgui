@@ -54,8 +54,8 @@ class MetadataService: MetadataServiceProtocol {
     func fetchAllSchemaMetadata(databaseId: String) async throws -> [String: [TableInfo]] {
         logger.debug("Fetching all schema metadata for database: \(databaseId)")
 
-        // This implementation will be completed in Task 11 after we set up the database query structure
-        // For now, return empty dictionary to compile
-        return [:]
+        return try await connectionManager.withConnection { conn in
+            try await self.queryExecutor.fetchAllSchemaMetadata(connection: conn)
+        }
     }
 }

@@ -69,7 +69,12 @@ protocol QueryExecutorProtocol {
         schema: String,
         table: String
     ) async throws -> [String]
-    
+
+    /// Fetch all tables with their column information for a database
+    /// - Parameter connection: Database connection
+    /// - Returns: Dictionary keyed by schema name
+    func fetchAllSchemaMetadata(connection: DatabaseConnectionProtocol) async throws -> [String: [TableInfo]]
+
     /// Execute arbitrary SQL query
     func executeQuery(
         connection: DatabaseConnectionProtocol,

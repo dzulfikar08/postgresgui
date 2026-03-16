@@ -533,6 +533,74 @@ struct PostgresQueryExecutor: QueryExecutorProtocol {
         logger.info("Deleted \(rows.count) row(s) from \(qualifiedTable)")
     }
 
+    // MARK: - Schema Metadata
+
+    /// Fetch all schema metadata
+    func fetchAllSchemaMetadata(connection: DatabaseConnectionProtocol) async throws -> [String: [TableInfo]] {
+        var result: [String: [TableInfo]] = [:]
+
+        // Fetch all tables across all schemas
+        let tablesQuery = """
+            SELECT table_schema, table_name
+            FROM information_schema.tables
+            WHERE table_type = 'BASE TABLE'
+            ORDER BY table_schema, table_name
+        """
+
+        logger.debug("Fetching all schema metadata")
+
+        let tablesResult = try await connection.executeQuery(tablesQuery)
+        var tableRows: [(schema: String, name: String)] = []
+
+        for try await row in tablesResult {
+            guard let postgresRow = row as? PostgresDatabaseRow else {
+                throw DatabaseError.unknownError("Expected PostgresDatabaseRow")
+            }
+            let (schema, name) = try postgresRow.row.decode((String, String).self)
+            tableRows.append((schema, name))
+        }
+
+        logger.debug("Found \(tableRows.count) tables")
+
+        // Group tables by schema
+        var schemaTables: [String: [(schema: String, name: String)]] = [:]
+        for table in tableRows {
+            if schemaTables[table.schema] == nil {
+                schemaTables[table.schema] = []
+            }
+            schemaTables[table.schema]?.append(table)
+        }
+
+        // Fetch column info for each table
+        for (schema, tables) in schemaTables {
+            result[schema] = []
+            for table in tables {
+                do {
+                    let columns = try await fetchColumns(connection: connection, schema: table.schema, table: table.name)
+                    let primaryKeys = try? await fetchPrimaryKeys(connection: connection, schema: table.schema, table: table.name)
+
+                    let tableInfo = TableInfo(
+                        name: table.name,
+                        schema: table.schema,
+                        tableType: .regular,
+                        primaryKeyColumns: primaryKeys,
+                        columnInfo: columns
+                    )
+
+                    result[schema]?.append(tableInfo)
+                } catch {
+                    logger.warning("Failed to fetch metadata for \(schema).\(table.name): \(error)")
+                    // Continue with other tables even if one fails
+                }
+            }
+        }
+
+        let totalTables = result.values.reduce(0) { $0 + $1.count }
+        logger.info("Fetched metadata for \(totalTables) tables in \(result.count) schemas")
+
+        return result
+    }
+
     // MARK: - Helpers
 
     /// Sanitize SQL identifier (table name, column name, etc.)
