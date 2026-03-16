@@ -9,48 +9,48 @@ import SwiftUI
 
 struct SplitContentView: View {
     @Environment(AppState.self) private var appState
-    @State private var bottomPaneHeight: CGFloat = 300
+    @State private var resultsPaneHeight: CGFloat = 300
     var onDeleteKeyPressed: (() -> Void)?
     var onSpaceKeyPressed: (() -> Void)?
 
     var body: some View {
         GeometryReader { geometry in
-            let topHeight = max(300, geometry.size.height - bottomPaneHeight)
-            
+            let editorPaneHeight = max(300, geometry.size.height - resultsPaneHeight)
+
             VSplitView {
-                // Top pane: Table data or query results
-                topPaneView
+                // Top pane: Query editor (previously bottom)
+                QueryEditorView()
                     .frame(minHeight: 300)
-                    .frame(height: topHeight)
+                    .frame(height: editorPaneHeight)
                     .background(
-                        GeometryReader { topGeometry in
+                        GeometryReader { editorGeometry in
                             Color.clear
-                                .preference(key: TopPaneHeightKey.self, value: topGeometry.size.height)
+                                .preference(key: EditorPaneHeightKey.self, value: editorGeometry.size.height)
                         }
                     )
 
-                // Bottom pane: Query editor - starts at 300px, resizable via VSplitView divider
-                QueryEditorView()
+                // Bottom pane: Query results or table data (previously top)
+                resultsPaneView
                     .frame(minHeight: 300)
-                    .frame(height: bottomPaneHeight)
+                    .frame(height: resultsPaneHeight)
                     .background(
-                        GeometryReader { bottomGeometry in
+                        GeometryReader { resultsGeometry in
                             Color.clear
-                                .preference(key: BottomPaneHeightKey.self, value: bottomGeometry.size.height)
+                                .preference(key: ResultsPaneHeightKey.self, value: resultsGeometry.size.height)
                         }
                     )
             }
-            .onPreferenceChange(BottomPaneHeightKey.self) { newHeight in
+            .onPreferenceChange(ResultsPaneHeightKey.self) { newHeight in
                 // Update state when VSplitView resizes (if it can)
-                if newHeight > 0 && abs(newHeight - bottomPaneHeight) > 1 {
-                    bottomPaneHeight = newHeight
+                if newHeight > 0 && abs(newHeight - resultsPaneHeight) > 1 {
+                    resultsPaneHeight = newHeight
                 }
             }
         }
     }
 
     @ViewBuilder
-    private var topPaneView: some View {
+    private var resultsPaneView: some View {
         if appState.query.isExecutingQuery {
             ProgressView()
                 .scaleEffect(0.8)
@@ -74,14 +74,14 @@ struct SplitContentView: View {
 }
 
 // Preference keys to track pane heights
-struct TopPaneHeightKey: PreferenceKey {
+struct EditorPaneHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
 }
 
-struct BottomPaneHeightKey: PreferenceKey {
+struct ResultsPaneHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
