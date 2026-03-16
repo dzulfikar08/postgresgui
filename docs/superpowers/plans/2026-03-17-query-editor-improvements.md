@@ -172,32 +172,46 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `PostgresGUI/Models/SQLContext.swift`
+- Create: `PostgresGUITests/SQLContextTests.swift`
 
 - [ ] **Step 1: Write test for SQLContext**
 
-Create test file: `PostgresGUITests/Models/SQLContextTests.swift`
+Create test file: `PostgresGUITests/SQLContextTests.swift`
+
+Note: Project uses Swift Testing framework, not XCTest.
 
 ```swift
-import XCTest
+import Testing
 @testable import PostgresGUI
 
-final class SQLContextTests: XCTestCase {
-    func testContextCasesExist() {
-        // Test that all expected cases exist
+@Suite("SQLContext Tests")
+struct SQLContextTests {
+    @Test("All context cases exist")
+    func contextCasesExist() {
         let contexts: [SQLContext] = [
             .selectClause,
             .fromClause,
             .whereClause,
             .tableReference,
-            .default
+            .defaultContext
         ]
-        XCTAssertEqual(contexts.count, 5)
+        #expect(contexts.count == 5)
     }
 
-    func testContextIsHashable() {
+    @Test("Context conforms to Equatable")
+    func contextIsEquatable() {
         let context1: SQLContext = .selectClause
         let context2: SQLContext = .selectClause
-        XCTAssertEqual(context1, context2)
+        let context3: SQLContext = .fromClause
+        #expect(context1 == context2)
+        #expect(context1 != context3)
+    }
+
+    @Test("Context conforms to Hashable")
+    func contextIsHashable() {
+        let context1: SQLContext = .selectClause
+        let context2: SQLContext = .selectClause
+        #expect(context1.hashValue == context2.hashValue)
     }
 }
 ```
@@ -248,12 +262,13 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add PostgresGUI/Models/SQLContext.swift PostgresGUITests/Models/SQLContextTests.swift
+git add PostgresGUI/Models/SQLContext.swift PostgresGUITests/SQLContextTests.swift
 git commit -m "feat: add SQLContext enum for auto-completion
 
 - Define 5 context types: selectClause, fromClause, whereClause, tableReference, defaultContext
-- Add unit tests for context enum
+- Add unit tests using Swift Testing framework
 - Supports context-aware suggestion filtering
+- Test Equatable and Hashable conformance
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ```
@@ -262,17 +277,22 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `PostgresGUI/Models/CompletionSuggestion.swift`
+- Create: `PostgresGUITests/CompletionSuggestionTests.swift`
 
 - [ ] **Step 1: Write test for CompletionSuggestion**
 
-Create test file: `PostgresGUITests/Models/CompletionSuggestionTests.swift`
+Create test file: `PostgresGUITests/CompletionSuggestionTests.swift`
+
+Note: Project uses Swift Testing framework, not XCTest.
 
 ```swift
-import XCTest
+import Testing
 @testable import PostgresGUI
 
-final class CompletionSuggestionTests: XCTestCase {
-    func testSuggestionInitialization() {
+@Suite("CompletionSuggestion Tests")
+struct CompletionSuggestionTests {
+    @Test("Suggestion initializes correctly")
+    func suggestionInitialization() {
         let suggestion = CompletionSuggestion(
             text: "username",
             displayText: "username (text)",
@@ -280,27 +300,35 @@ final class CompletionSuggestionTests: XCTestCase {
             relevanceScore: 100
         )
 
-        XCTAssertEqual(suggestion.text, "username")
-        XCTAssertEqual(suggestion.displayText, "username (text)")
-        XCTAssertEqual(suggestion.kind, .column)
-        XCTAssertEqual(suggestion.relevanceScore, 100)
+        #expect(suggestion.text == "username")
+        #expect(suggestion.displayText == "username (text)")
+        #expect(suggestion.kind == .column)
+        #expect(suggestion.relevanceScore == 100)
     }
 
-    func testSuggestionConformsToIdentifiable() {
+    @Test("Suggestion conforms to Identifiable")
+    func suggestionConformsToIdentifiable() {
         let suggestion = CompletionSuggestion(
             text: "test",
             displayText: "test",
             kind: .keyword,
             relevanceScore: 50
         )
-        XCTAssertEqual(suggestion.id, "test")
+        #expect(suggestion.id == "test")
     }
 
-    func testCompletionKindCases() {
+    @Test("CompletionKind has all cases")
+    func completionKindCases() {
         let kinds: [CompletionSuggestion.CompletionKind] = [
             .table, .column, .keyword, .function
         ]
-        XCTAssertEqual(kinds.count, 4)
+        #expect(kinds.count == 4)
+    }
+
+    @Test("CompletionKind is Equatable")
+    func completionKindIsEquatable() {
+        #expect(CompletionSuggestion.CompletionKind.table == .table)
+        #expect(CompletionSuggestion.CompletionKind.table != .column)
     }
 }
 ```
@@ -359,13 +387,14 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add PostgresGUI/Models/CompletionSuggestion.swift PostgresGUITests/Models/CompletionSuggestionTests.swift
+git add PostgresGUI/Models/CompletionSuggestion.swift PostgresGUITests/CompletionSuggestionTests.swift
 git commit -m "feat: add CompletionSuggestion model
 
 - Define suggestion with text, displayText, kind, and relevanceScore
 - Support 4 completion kinds: table, column, keyword, function
 - Conform to Identifiable using text as id
-- Add unit tests for model initialization
+- Add unit tests using Swift Testing framework
+- Test Equatable conformance for CompletionKind
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ```
@@ -374,43 +403,51 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `PostgresGUI/Models/SQLToken.swift`
+- Create: `PostgresGUITests/SQLTokenTests.swift`
 
 - [ ] **Step 1: Write test for SQLToken**
 
-Create test file: `PostgresGUITests/Models/SQLTokenTests.swift`
+Create test file: `PostgresGUITests/SQLTokenTests.swift`
+
+Note: Project uses Swift Testing framework, not XCTest.
 
 ```swift
-import XCTest
+import Testing
 @testable import PostgresGUI
 
-final class SQLTokenTests: XCTestCase {
-    func testKeywordToken() {
+@Suite("SQLToken Tests")
+struct SQLTokenTests {
+    @Test("Keyword token creation")
+    func keywordToken() {
         let token = SQLToken.keyword("SELECT")
         if case .keyword(let value) = token {
-            XCTAssertEqual(value, "SELECT")
+            #expect(value == "SELECT")
         } else {
-            XCTFail("Expected keyword token")
+            Issue.record("Expected keyword token")
         }
     }
 
-    func testIdentifierToken() {
+    @Test("Identifier token creation")
+    func identifierToken() {
         let token = SQLToken.identifier("username")
         if case .identifier(let value) = token {
-            XCTAssertEqual(value, "username")
+            #expect(value == "username")
         } else {
-            XCTFail("Expected identifier token")
+            Issue.record("Expected identifier token")
         }
     }
 
-    func testOperatorToken() {
+    @Test("Operator token creation")
+    func operatorToken() {
         let token = SQLToken.operator("=")
         if case .operator(let value) = token {
-            XCTAssertEqual(value, "=")
+            #expect(value == "=")
         } else {
-            XCTFail("Expected operator token")
+            Issue.record("Expected operator token")
         }
     }
 
+    @Test("All token types exist")
     func testAllTokenTypes() {
         let tokens: [SQLToken] = [
             .keyword("SELECT"),
@@ -421,7 +458,26 @@ final class SQLTokenTests: XCTestCase {
             .dot,
             .comma
         ]
-        XCTAssertEqual(tokens.count, 7)
+        #expect(tokens.count == 7)
+    }
+
+    @Test("Token conforms to Equatable")
+    func tokenEquality() {
+        let token1 = SQLToken.keyword("SELECT")
+        let token2 = SQLToken.keyword("SELECT")
+        let token3 = SQLToken.keyword("FROM")
+        #expect(token1 == token2)
+        #expect(token1 != token3)
+    }
+
+    @Test("String literal token")
+    func stringLiteralToken() {
+        let token = SQLToken.stringLiteral("'test value'")
+        if case .stringLiteral(let value) = token {
+            #expect(value == "'test value'")
+        } else {
+            Issue.record("Expected string literal token")
+        }
     }
 }
 ```
@@ -452,6 +508,42 @@ enum SQLToken: Equatable {
 
     /// Identifier (table name, column name, etc.)
     case identifier(String)
+
+    /// Operator (=, <>, LIKE, etc.)
+    case operator(String)
+
+    /// String literal
+    case stringLiteral(String)
+
+    /// Whitespace (spaces, tabs, newlines)
+    case whitespace
+
+    /// Dot operator (.)
+    case dot
+
+    /// Comma separator (,)
+    case comma
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `swift test --filter SQLTokenTests`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add PostgresGUI/Models/SQLToken.swift PostgresGUITests/SQLTokenTests.swift
+git commit -m "feat: add SQLToken enum for SQL parsing
+
+- Define 7 token types: keyword, identifier, operator, stringLiteral, whitespace, dot, comma
+- Support lexical analysis for SQL context detection
+- Add unit tests using Swift Testing framework
+- Test Equatable conformance
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+```
 
     /// Operator (=, <>, LIKE, etc.)
     case operator(String)
